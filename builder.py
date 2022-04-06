@@ -66,6 +66,8 @@ class Builder:
                 '-std=c++20',
                 '-Wall',
                 '-g',
+                '-o',
+                '$outputName'
                 ],
             'sourceExtension': 'cpp',
             'headerExtension': 'h',
@@ -146,7 +148,25 @@ class Builder:
                 print(f'cascading {headerFile}...')
                 self.rebuildSet = self.rebuildSet.union(self.HeaderFileCascade(headerFile))
 
+    def GetBuildCommand(self,file):
+        cmd = self.options['compileCommand']
+        filePlaced = False
+        for flag in self.options['debugFlags']:
+            if flag[0]=='%':
+                if flag[1:] == 'outputName':
+                    flag = self.options['outputName']
+                elif flag[1:] == 'inputFile':
+                    filePlaced = True
+                    flag = file
+                else:
+                    raise ValueError(f"Unexpected special flag {flag}, options are %outputName and %inputFile")
+            
+            cmd += ' '+flag
 
+        if not filePlaced:
+            cmd += ' '+file
+
+        return cmd
     
     def Build(self):
         self.CollectAllCompilables(self.options['sourceDir'])
@@ -162,12 +182,24 @@ class Builder:
 if __name__=='__main__':
     options = {
             'outputName': 'context2',
-            'compileCommand': 'g++',
-            'flags':[
+            'compileCommand': 'g++ -c',
+            'linkCommand': 'g++',
+            'debugFlags':[
+                '%inputFile',
                 '-std=c++20',
                 '-Wall',
                 '-g',
-                ],
+                '-o',
+                '%outputName'
+            ],
+            'releaseFlags':[
+                '-std=c++20',
+                '-Wall',
+                '-O3',
+                '-s',
+                '-o',
+                '%outputName'
+            ],
             'sourceExtension': 'cpp',
             'headerExtension': 'h',
             'objectExtension': 'o',
