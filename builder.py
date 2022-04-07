@@ -5,6 +5,14 @@ import os,argparse,json
 def IsObjFileOutdated(srcFile,objFile):
     return GetFileTime(srcFile)>=GetFileTime(objFile)
 
+def DirContainsObjects(dirName,objExt):
+    l = os.listdir(dirName)
+    for f in l:
+        if GetExtension(f)==objExt:
+            return True
+
+    return False
+
 def GetFileTime(filename):
     if not os.path.exists(filename):
         return 0
@@ -181,10 +189,13 @@ class Builder:
 
         return cmd
     
-    def Build(self,mode=''):
+    def Scan(self):
         self.CollectAllCompilables(self.options['sourceDir'])
         self.InvertDependencies()
         self.GetRebuildSet()
+
+    def Build(self,mode=''):
+        self.Scan()
  
         if mode=='' and 'defaultMode' in self.options:
             mode = self.options['defaultMode']
@@ -219,7 +230,7 @@ class Builder:
                 return
 
         if self.options['linkCommand']!='':
-            self.InfoPrint('Linking...')
+            self.InfoPrint('Linking executable...')
 
             cmd = self.GetLinkCommand(mode)
             self.InfoPrint(cmd)
@@ -229,7 +240,26 @@ class Builder:
                 self.InfoPrint("Linker error!")
 
         self.InfoPrint('Done!')
+    
+    def Clean(self):
+        self.InfoPrint("Cleaning up...")
+        if DirContainsObjects(self.options['objectDir'],self.options['objectExtension']):
+            path = SetExtension(os.path.join(self.options['objectDir'],'*'),self.options['objectExtension'])
+            cmd = f"rm {path}"
+            self.InfoPrint(cmd)
+            os.system(cmd)
+        
+        
+        path = os.path.join(self.options['outputDir'],self.options['outputName'])
+        if os.path.exists(path):
+            cmd = f"rm {path}"
+            self.InfoPrint(cmd)
+            os.system(cmd)
 
+        self.InfoPrint('Done!')
+
+
+    
 def GetOptionsFromFile():
     s = ''
     with open('builder.json','r') as f:
@@ -249,6 +279,7 @@ def main():
     parser = argparse.ArgumentParser(description="Only builds what needs to be built.")
     group = parser.add_mutually_exclusive_group()
     parser.add_argument("mode",default='',help="specify the set of flags to use",nargs='?')
+    parser.add_argument("--clean",help="remove all object files and output",action="store_true")
     group.add_argument("-v","--verbose",help="print more info for debugging",action="store_true")
     group.add_argument('-q','--quiet',help='silence all output (from this program)',action='store_true')
     args = parser.parse_args()
@@ -260,7 +291,10 @@ def main():
     if args.quiet:
         b.quiet = True
 
-    b.Build(args.mode)
+    if args.clean:
+        b.Clean()
+    else:
+        b.Build(args.mode)
 
 
 if __name__=='__main__':
