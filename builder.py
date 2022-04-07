@@ -158,10 +158,16 @@ class Builder:
                         self.rebuildSet.add(srcFile)
                         self.DebugPrint(f"Adding source file {srcFile}\nReason: found in outdated header cascade")
 
+    def GetObjectsPath(self):
+        return os.path.join(self.options['objectDir'],SetExtension('*',self.options['objectExtension']))
+
+    def GetObjectFromSource(self,src):
+        return os.path.join(self.options['objectDir'],SetExtension(os.path.basename(src),self.options['objectExtension']))
+
     def GetCompileCommand(self,file,mode):
         cmd = self.options['compileCommand']
         filePlaced = False
-        objVersion = os.path.join(self.options['objectDir'],os.path.basename(SetExtension(file,self.options['objectExtension'])))
+        objVersion = self.GetObjectFromSource(file)
         for flag in self.options['compileFlags'][mode]:
             if flag[0]=='%':
                 if flag[1:] == 'output':
@@ -182,9 +188,8 @@ class Builder:
     def GetLinkCommand(self,mode):
         cmd = self.options['linkCommand']
         inputFilesPlaced = False
-        inputFiles = os.path.join(self.options['objectDir'],SetExtension("*",self.options['objectExtension']))
+        inputFiles = self.GetObjectsPath()
         outputFile = os.path.join(self.options['outputDir'],self.options['outputName'])
-
 
         for flag in self.options['linkFlags'][mode]:
             if flag[0]=='%':
@@ -232,7 +237,12 @@ class Builder:
 
             for i,file in enumerate(self.rebuildSet):
                 cmd = self.GetCompileCommand(file,mode)
-                self.InfoPrint(f'{TextColor(GREEN,0)}{i+1}/{compileCount}: {TextColor(BLUE,0)}{cmd}')
+                if self.debug:
+                    self.InfoPrint(f'{TextColor(GREEN)}{i+1}/{compileCount}: {TextColor(BLUE)}{cmd}')
+                else:
+                    src = file
+                    obj = self.GetObjectFromSource(src)
+                    self.InfoPrint(f'{TextColor(GREEN)}Building ({i+1}/{compileCount}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}')
                 code = os.system(cmd)
                 if code!=0:
                     errored = True
@@ -249,7 +259,12 @@ class Builder:
             self.InfoPrint(f'{TextColor(WHITE,1)}Linking executable...{ResetTextColor()}')
 
             cmd = self.GetLinkCommand(mode)
-            self.InfoPrint(f'{TextColor(BLUE)}{cmd}{ResetTextColor()}')
+            if self.debug:
+                self.InfoPrint(f'{TextColor(BLUE)}{cmd}{ResetTextColor()}')
+            else:
+                src = self.GetObjectsPath()
+                dest = os.path.join(self.options['outputDir'],self.options['outputName'])
+                self.InfoPrint(f'{TextColor(GREEN)}Linking: {TextColor(BLUE)}{src} {TextColor(WHITE,1)}-> {TextColor(GREEN,1)}{dest}{ResetTextColor()}')
             code = os.system(cmd)
 
             if code!=0:
@@ -262,14 +277,20 @@ class Builder:
         if DirContainsObjects(self.options['objectDir'],self.options['objectExtension']):
             path = SetExtension(os.path.join(self.options['objectDir'],'*'),self.options['objectExtension'])
             cmd = f"rm {path}"
-            self.InfoPrint(cmd)
+            if self.debug:
+                self.InfoPrint(cmd)
+            else:
+                self.InfoPrint(f"{TextColor(YELLOW)}Removing {path}")
             os.system(cmd)
         
         
         path = os.path.join(self.options['outputDir'],self.options['outputName'])
         if os.path.exists(path):
             cmd = f"rm {path}"
-            self.InfoPrint(cmd)
+            if self.debug:
+                self.InfoPrint(cmd)
+            else:
+                self.InfoPrint(f"{TextColor(YELLOW)}Removing {path}")
             os.system(cmd)
 
         self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
@@ -287,7 +308,7 @@ def GetOptionsFromFile():
 def main():
     if not os.path.exists('./builder.json'):
         print(f"{TextColor(RED,1)}No builder.json file found!{ResetTextColor()}")
-        print("{TextColor(RED)}Exiting...{ResetTextColor()}")
+        print(f"{TextColor(RED)}Exiting...{ResetTextColor()}")
         quit()
 
     options = GetOptionsFromFile()
