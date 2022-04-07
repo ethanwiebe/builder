@@ -1,11 +1,6 @@
 #!/bin/python
 
-import os,argparse
-
-
-def IsFileModified(time,filename):
-    ftime = GetFileTime(filename)
-    return time<=ftime
+import os,argparse,json
 
 def IsObjFileOutdated(srcFile,objFile):
     return GetFileTime(srcFile)>=GetFileTime(objFile)
@@ -22,12 +17,6 @@ def GetExtension(filename):
 def SetExtension(filename,ext):
     return os.path.splitext(filename)[0]+'.'+ext
 
-def GoUpNLevels(path,n):
-    for i in range(n):
-        index = path.rfind('/')
-        path = path[:index+1]
-    return path
-
 def GetPrefixAndName(path):
     if '/' in path:
         endLoc = path.rfind('/')
@@ -35,8 +24,6 @@ def GetPrefixAndName(path):
         filename = path[endLoc+1:]
     
     return prefix,filename
-
-
 
 def CPPExtractIncludeFile(line):
     start = line.find('"')
@@ -58,27 +45,7 @@ def CPPDeps(path):
 
     return deps
 
-
 class Builder:
-
-    cppOptionsTemplate = {
-            'outputName': 'a',
-            'compileCommand': 'g++',
-            'flags':[
-                '-std=c++20',
-                '-Wall',
-                '-g',
-                '-o',
-                '$outputName'
-                ],
-            'sourceExtension': 'cpp',
-            'headerExtension': 'h',
-            'objectExtension': 'o',
-            'sourceDir': 'src',
-            'objectDir': '',
-            'outputDir': 'bin',
-    }
-
     def __init__(self,options,extractFunc):
         self.options = options
         self.depExtractFunc = extractFunc
@@ -268,7 +235,7 @@ def GetOptionsFromFile():
     with open('builder.json','r') as f:
         s = f.read()
     
-    return json.JSONDecoder.decode(s)
+    return json.JSONDecoder().decode(s)
 
 
 def main():
