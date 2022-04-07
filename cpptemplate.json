@@ -1,0 +1,50 @@
+{
+	"outputName": "a.out", 
+	"compileCommand": "g++ -c", 
+	"linkCommand": "g++", 
+	"defaultMode": "debug", 
+
+	"compileFlags": {
+		"debug": [
+			"%input", 
+			"-std=c++20", 
+			"-Wall", 
+			"-ggdb3", 
+			"-Og", 
+			"-o", 
+			"%output"
+		], 
+
+		"release": [
+			"%input", 
+			"-std=c++20", 
+			"-DNDEBUG", 
+			"-Wall", 
+			"-O3", 
+			"-o", 
+			"%output"
+		]
+	}, 
+
+	"linkFlags": {
+		"debug": [
+			"%input", 
+			"-o", 
+			"%output"
+		], 
+
+		"release": [
+			"%input", 
+			"-s", 
+			"-o", 
+			"%output"
+		]
+	}, 
+			
+	"sourceExtension": "cpp", 
+	"headerExtension": "h", 
+	"objectExtension": "o", 
+	"sourceDir": "src", 
+	"objectDir": "build", 
+	"outputDir": "bin"
+}
