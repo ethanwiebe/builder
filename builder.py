@@ -2,6 +2,20 @@
 
 import os,argparse,json
 
+RED = 1
+GREEN = 2
+YELLOW = 3
+BLUE = 4
+MAGENTA = 5
+CYAN = 6
+WHITE = 7
+
+def ResetTextColor():
+    return '\x1b[0m'
+
+def TextColor(color,bold=0):
+    return f'\x1b[{bold};{30+color}m'
+
 def IsObjFileOutdated(srcFile,objFile):
     return GetFileTime(srcFile)>=GetFileTime(objFile)
 
@@ -199,7 +213,7 @@ class Builder:
  
         if mode=='' and 'defaultMode' in self.options:
             mode = self.options['defaultMode']
-            self.InfoPrint(f"Using default mode {mode}")
+            self.InfoPrint(f"{TextColor(WHITE,1)}Using default mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
 
         if mode not in self.options['compileFlags']:
             raise ValueError(f"Mode {mode} is missing from the compile flags!")
@@ -213,36 +227,38 @@ class Builder:
 
         compileCount = len(self.rebuildSet)
         if compileCount!=0 and self.options['compileCommand']!='':
-            self.InfoPrint(f'Building {compileCount} files...')
+            self.InfoPrint(f'{TextColor(WHITE,1)}Building {TextColor(CYAN,1)}{compileCount}{TextColor(WHITE,1)} files...')
             
 
             for i,file in enumerate(self.rebuildSet):
                 cmd = self.GetCompileCommand(file,mode)
-                self.InfoPrint(f'{i+1}/{compileCount} {cmd}')
+                self.InfoPrint(f'{TextColor(GREEN,0)}{i+1}/{compileCount}: {TextColor(BLUE,0)}{cmd}')
                 code = os.system(cmd)
                 if code!=0:
                     errored = True
                     break
 
+            self.InfoPrint(f'{ResetTextColor()}')
+
             if errored:
-                self.InfoPrint("Not all files were successfully compiled!")
-                self.InfoPrint("Exiting...")
+                self.InfoPrint(f"{TextColor(RED,1)}Not all files were successfully compiled!{ResetTextColor()}")
+                self.InfoPrint(f"{TextColor(RED)}Exiting...{ResetTextColor()}")
                 return
 
         if self.options['linkCommand']!='':
-            self.InfoPrint('Linking executable...')
+            self.InfoPrint(f'{TextColor(WHITE,1)}Linking executable...{ResetTextColor()}')
 
             cmd = self.GetLinkCommand(mode)
-            self.InfoPrint(cmd)
+            self.InfoPrint(f'{TextColor(BLUE)}{cmd}{ResetTextColor()}')
             code = os.system(cmd)
 
             if code!=0:
-                self.InfoPrint("Linker error!")
+                self.InfoPrint(f"{TextColor(RED,1)}Linker error!{ResetTextColor()}")
 
-        self.InfoPrint('Done!')
+        self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
     
     def Clean(self):
-        self.InfoPrint("Cleaning up...")
+        self.InfoPrint(f"{TextColor(WHITE,1)}Cleaning up...{TextColor(YELLOW)}")
         if DirContainsObjects(self.options['objectDir'],self.options['objectExtension']):
             path = SetExtension(os.path.join(self.options['objectDir'],'*'),self.options['objectExtension'])
             cmd = f"rm {path}"
@@ -256,7 +272,7 @@ class Builder:
             self.InfoPrint(cmd)
             os.system(cmd)
 
-        self.InfoPrint('Done!')
+        self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
 
 
     
@@ -270,8 +286,8 @@ def GetOptionsFromFile():
 
 def main():
     if not os.path.exists('./builder.json'):
-        print("No builder.json file found!")
-        print("Exiting...")
+        print(f"{TextColor(RED,1)}No builder.json file found!{ResetTextColor()}")
+        print("{TextColor(RED)}Exiting...{ResetTextColor()}")
         quit()
 
     options = GetOptionsFromFile()
@@ -295,6 +311,8 @@ def main():
         b.Clean()
     else:
         b.Build(args.mode)
+
+    print(ResetTextColor(),end='')
 
 
 if __name__=='__main__':
