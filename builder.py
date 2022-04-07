@@ -263,56 +263,21 @@ class Builder:
 
         self.InfoPrint('Done!')
 
-if __name__=='__main__':
-    options = {
-            'outputName': 'context',
-            'compileCommand': 'g++ -c',
-            'linkCommand': 'g++',
-            'defaultMode': 'release',
-            'compileFlags':{
-                'debug':[
-                    '%input',
-                    '-std=c++20',
-                    '-Wall',
-                    '-ggdb3',
-                    '-Og',
-                    '-DCURSES_INTERFACE',
-                    '-o',
-                    '%output'
-                ],
-                'release':[
-                    '%input',
-                    '-std=c++20',
-                    '-DCURSES_INTERFACE',
-                    '-DNDEBUG',
-                    '-Wall',
-                    '-O3',
-                    '-o',
-                    '%output'
-                ]
-            },
-            'linkFlags':{
-                'debug':[
-                    '%input',
-                    "-o",
-                    "%output",
-                    '-lncurses'
-                ],
-                'release':[
-                    '%input',
-                    '-s',
-                    "-o",
-                    "%output",
-                    '-lncurses'
-                ]
-            },
-            'sourceExtension': 'cpp',
-            'headerExtension': 'h',
-            'objectExtension': 'o',
-            'sourceDir': '../../cpp/context2/src',
-            'objectDir': '../../cpp/context2/build',
-            'outputDir': '../../cpp/context2/bin',
-    }
+def GetOptionsFromFile():
+    s = ''
+    with open('builder.json','r') as f:
+        s = f.read()
+    
+    return json.JSONDecoder.decode(s)
+
+
+def main():
+    if not os.path.exists('./builder.json'):
+        print("No builder.json file found!")
+        print("Exiting...")
+        quit()
+
+    options = GetOptionsFromFile()
 
     parser = argparse.ArgumentParser(description="Only builds what needs to be built.")
     group = parser.add_mutually_exclusive_group()
@@ -321,7 +286,6 @@ if __name__=='__main__':
     group.add_argument('-q','--quiet',help='silence all output (from this program)',action='store_true')
     args = parser.parse_args()
 
-
     b = Builder(options,CPPDeps)
     if args.verbose:
         b.debug = True
@@ -329,6 +293,8 @@ if __name__=='__main__':
     if args.quiet:
         b.quiet = True
 
-
     b.Build(args.mode)
 
+
+if __name__=='__main__':
+   main() 
