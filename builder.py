@@ -10,22 +10,25 @@ MAGENTA = 5
 CYAN = 6
 WHITE = 7
 
+noColor = False
+
 def ResetTextColor():
+    global noColor
+    if noColor:
+        return ''
+
     return '\x1b[0m'
 
 def TextColor(color,bold=0):
+    global noColor
+    if noColor:
+        return ''
+
     return f'\x1b[{bold};{30+color}m'
 
 def IsObjFileOutdated(srcFile,objFile):
     return GetFileTime(srcFile)>=GetFileTime(objFile)
 
-def DirContainsObjects(dirName,objExt):
-    l = os.listdir(dirName)
-    for f in l:
-        if GetExtension(f)==objExt:
-            return True
-
-    return False
 
 def GetFileTime(filename):
     if not os.path.exists(filename):
@@ -83,6 +86,14 @@ class Builder:
     def InfoPrint(self,msg):
         if not self.quiet:
             print(msg)
+
+    def DirContainsObjects(self):
+        l = os.listdir(self.options['objectDir'])
+        for f in l:
+            if GetExtension(f)==self.options['objectExtension']:
+                return True
+
+        return False
 
     def FindFileDependencies(self,path):
         deps = self.depExtractFunc(path)
@@ -169,14 +180,21 @@ class Builder:
         filePlaced = False
         objVersion = self.GetObjectFromSource(file)
         for flag in self.options['compileFlags'][mode]:
-            if flag[0]=='%':
+            if flag == '':
+                continue
+
+            if flag[:2]=='%%': #escaped %
+                flag = flag[1:]
+            elif flag[0]=='%':
                 if flag[1:] == 'output':
                     flag = objVersion
                 elif flag[1:] == 'input':
                     filePlaced = True
                     flag = file
                 else:
-                    raise ValueError(f"Unexpected special flag {flag}, options are %output and %input")
+                    print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %output and %input")
+                    print(ExitingMsg())
+                    quit()
             
             cmd += ' '+flag
 
@@ -192,14 +210,21 @@ class Builder:
         outputFile = os.path.join(self.options['outputDir'],self.options['outputName'])
 
         for flag in self.options['linkFlags'][mode]:
-            if flag[0]=='%':
+            if flag == '':
+                continue
+
+            if flag[:2]=='%%':
+                flag = flag[1:]
+            elif flag[0]=='%':
                 if flag[1:] == 'output':
                     flag = outputFile
                 elif flag[1:] == 'input':
                     inputFilesPlaced = True
                     flag = inputFiles
                 else:
-                    raise ValueError(f"Unexpected special flag {flag}, options are %output and %input")
+                    print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %output and %input")
+                    print(ExitingMsg())
+                    quit()
             
             cmd += ' '+flag
 
@@ -213,18 +238,12 @@ class Builder:
         self.InvertDependencies()
         self.GetRebuildSet()
 
-    def Build(self,mode=''):
+    def Build(self,mode):
         self.Scan()
  
-        if mode=='' and 'defaultMode' in self.options:
+        if mode=='':
             mode = self.options['defaultMode']
             self.InfoPrint(f"{TextColor(WHITE,1)}Using default mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
-
-        if mode not in self.options['compileFlags']:
-            raise ValueError(f"Mode {mode} is missing from the compile flags!")
-        
-        if mode not in self.options['linkFlags']:
-            raise ValueError(f"Mode {mode} is missing from the link flags!")
 
 
         errored = False
@@ -238,17 +257,15 @@ class Builder:
             for i,file in enumerate(self.rebuildSet):
                 cmd = self.GetCompileCommand(file,mode)
                 if self.debug:
-                    self.InfoPrint(f'{TextColor(GREEN)}{i+1}/{compileCount}: {TextColor(BLUE)}{cmd}')
+                    self.InfoPrint(f'{TextColor(GREEN)}{i+1}/{compileCount}: {TextColor(BLUE)}{cmd}{ResetTextColor()}')
                 else:
                     src = file
                     obj = self.GetObjectFromSource(src)
-                    self.InfoPrint(f'{TextColor(GREEN)}Building ({i+1}/{compileCount}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}')
+                    self.InfoPrint(f'{TextColor(GREEN)}Building ({i+1}/{compileCount}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}{ResetTextColor()}')
                 code = os.system(cmd)
                 if code!=0:
                     errored = True
                     break
-
-            self.InfoPrint(f'{ResetTextColor()}')
 
             if errored:
                 self.InfoPrint(f"{TextColor(RED,1)}Not all files were successfully compiled!{ResetTextColor()}")
@@ -274,7 +291,7 @@ class Builder:
     
     def Clean(self):
         self.InfoPrint(f"{TextColor(WHITE,1)}Cleaning up...{TextColor(YELLOW)}")
-        if DirContainsObjects(self.options['objectDir'],self.options['objectExtension']):
+        if self.DirContainsObjects():
             path = SetExtension(os.path.join(self.options['objectDir'],'*'),self.options['objectExtension'])
             cmd = f"rm {path}"
             if self.debug:
@@ -296,22 +313,101 @@ class Builder:
         self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
 
 
-    
+def ExitingMsg():
+    return f"{TextColor(RED)}Exiting...{ResetTextColor()}"
+
 def GetOptionsFromFile():
+    if not os.path.exists('./builder.json'):
+        print(f"{TextColor(RED,1)}No builder.json file found!{ResetTextColor()}")
+        print(ExitingMsg())
+        quit()
+
     s = ''
     with open('builder.json','r') as f:
         s = f.read()
     
-    return json.JSONDecoder().decode(s)
+    op = json.JSONDecoder().decode(s)
+
+    error = False
+
+    cc = False
+    lc = False
+
+    if 'compileCommand' not in op:
+        print(f'{TextColor(RED,1)}builder.json must specify "compileCommand"!')
+        error = True
+    else:
+        cc = op['compileCommand']!=''
+
+    if 'linkCommand' not in op:
+        print(f'{TextColor(RED,1)}builder.json must specify "linkCommand"!')
+        error = True
+    else:
+        lc = op['linkCommand']!=''
+
+    if 'outputName' not in op:
+        op['outputName'] = 'a'
+
+    if 'modes' not in op:
+        print(f'{TextColor(RED,1)}builder.json must specify "modes"!')
+        error = True
+    elif len(op['modes'])==0:
+        print(f'{TextColor(RED,1)}builder.json must specify at least one mode in "modes"!')
+        error = True
+
+    if 'defaultMode' not in op:
+        if 'modes' in op and len(op['modes'])!=0:
+            op['defaultMode'] = op['modes'][0]
+
+    if 'sourceExtension' not in op:
+        op['sourceExtension'] = 'cpp'
+
+    if 'headerExtension' not in op:
+        op['headerExtension'] = 'h'
+
+    if 'objectExtension' not in op:
+        op['objectExtension'] = 'o'
+
+    if 'sourceDir' not in op:
+        print(f'{TextColor(RED,1)}builder.json must specify "sourceDir"!')
+        error = True
+
+    if 'objectDir' not in op:
+        op['objectDir'] = '.'
+
+    if 'outputDir' not in op:
+        op['outputDir'] = '.'
+
+    if cc:
+        if 'compileFlags' not in op:
+            print(f'{TextColor(RED,1)}builder.json must specify "compileFlags" in order to compile!')
+            error = True
+        else:
+            for mode in op['modes']:
+                if mode not in op['compileFlags']:
+                    print(f'{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not included in "compileFlags"!')
+                    error = True
+
+    if lc:
+        if 'linkFlags' not in op:
+            print(f'{TextColor(RED,1)}builder.json must specify "linkFlags" in order to link!')
+            error = True
+        else:
+            for mode in op['modes']:
+                if mode not in op['linkFlags']:
+                    print(f'{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not included in "linkFlags"!')
+                    error = True
 
 
-def main():
-    if not os.path.exists('./builder.json'):
-        print(f"{TextColor(RED,1)}No builder.json file found!{ResetTextColor()}")
-        print(f"{TextColor(RED)}Exiting...{ResetTextColor()}")
+    if error:
+        print(ExitingMsg())
         quit()
 
-    options = GetOptionsFromFile()
+    return op
+
+
+def main():    
+    global noColor
 
     parser = argparse.ArgumentParser(description="Only builds what needs to be built.")
     group = parser.add_mutually_exclusive_group()
@@ -319,7 +415,13 @@ def main():
     parser.add_argument("--clean",help="remove all object files and output",action="store_true")
     group.add_argument("-v","--verbose",help="print more info for debugging",action="store_true")
     group.add_argument('-q','--quiet',help='silence all output (from this program)',action='store_true')
+    parser.add_argument("--nocolor",help="disables output of color (turn this on if redirecting to a file)",action="store_true")
     args = parser.parse_args()
+
+    if args.nocolor:
+        noColor = True
+
+    options = GetOptionsFromFile()
 
     b = Builder(options,CPPDeps)
     if args.verbose:
