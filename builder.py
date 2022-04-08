@@ -87,10 +87,10 @@ class Builder:
         if not self.quiet:
             print(msg)
 
-    def DirContainsObjects(self):
-        l = os.listdir(self.options['objectDir'])
+    def DirContainsObjects(self,mode):
+        l = os.listdir(GetModeVar(self.options,mode,'objectDir'))
         for f in l:
-            if GetExtension(f)==self.options['objectExtension']:
+            if GetExtension(f)==GetModeVar(self.options,mode,'objectExtension'):
                 return True
 
         return False
@@ -115,46 +115,46 @@ class Builder:
                 self.invdict[dep].add(file)
         return self.invdict
 
-    def HeaderFileCascade(self,headerFile,cascadeSet=None): #return all source files affected by a header file
+    def HeaderFileCascade(self,mode,headerFile,cascadeSet=None): #return all source files affected by a header file
         if cascadeSet == None:
             cascadeSet = set()
 
         children = self.invdict[headerFile]
         for child in children:
-            if GetExtension(child)==self.options['sourceExtension']:
+            if GetExtension(child)==GetModeVar(self.options,mode,'sourceExtension'):
                 cascadeSet.add(child)
-            elif GetExtension(child)==self.options['headerExtension']:
-                cascadeSet = self.HeaderFileCascade(child,cascadeSet)
+            elif GetExtension(child)==GetModeVar(self.options,mode,'headerExtension'):
+                cascadeSet = self.HeaderFileCascade(mode,child,cascadeSet)
 
         return cascadeSet
         
                 
-    def CollectCompilables(self,srcdir):
-        files = os.listdir(srcdir)
+    def CollectCompilables(self,srcDir,srcExt):
+        files = os.listdir(srcDir)
         for file in files:
-            path = os.path.join(srcdir,file)
+            path = os.path.join(srcDir,file)
             if os.path.isdir(path):
-                self.CollectCompilables(path)
-            elif GetExtension(file)==self.options['sourceExtension']:
+                self.CollectCompilables(path,srcExt)
+            elif GetExtension(file)==srcExt:
                 self.compileFiles.add(path)
                 self.FindFileDependencies(path)
     
-    def CollectAllCompilables(self,srcdir):
+    def CollectAllCompilables(self,srcDir,srcExt):
         self.compileFiles = set()
-        self.CollectCompilables(srcdir)
+        self.CollectCompilables(srcDir,srcExt)
         self.DebugPrint(f"Found {len(self.compileFiles)} source files.")
         self.DebugPrint(f"Found {len(self.depdict)} total files.")
 
-    def GetRebuildSet(self):
+    def GetRebuildSet(self,mode):
         self.rebuildSet = set()
 
         for srcFile in self.compileFiles:
-            objFile = SetExtension(os.path.join(self.options['objectDir'],os.path.basename(srcFile)),self.options['objectExtension'])
+            objFile = self.GetObjectFromSource(mode,srcFile)
             if IsObjFileOutdated(srcFile,objFile):
                 self.rebuildSet.add(srcFile)
                 self.DebugPrint(f"Adding source file {srcFile}\nReason: outdated object")
 
-        outputPath = os.path.join(self.options['outputDir'],self.options['outputName'])
+        outputPath = self.GetOutputPath(mode)
         outputAge = GetFileTime(outputPath)
         self.DebugPrint(f'Output ({outputPath}) has age {outputAge}')
 
@@ -162,24 +162,28 @@ class Builder:
             headerAge = GetFileTime(headerFile)
             if headerAge>=outputAge:
                 self.DebugPrint(f'Cascading {headerFile}...')
-                headerSet = self.HeaderFileCascade(headerFile)
+                headerSet = self.HeaderFileCascade(mode,headerFile)
                 for srcFile in headerSet:
-                    objFile = SetExtension(os.path.join(self.options['objectDir'],os.path.basename(srcFile)),self.options['objectExtension'])
+                    objFile = self.GetObjectFromSource(mode,srcFile)
                     if headerAge>=GetFileTime(objFile):
                         self.rebuildSet.add(srcFile)
                         self.DebugPrint(f"Adding source file {srcFile}\nReason: found in outdated header cascade")
 
-    def GetObjectsPath(self):
-        return os.path.join(self.options['objectDir'],SetExtension('*',self.options['objectExtension']))
+    def GetObjectsPath(self,mode):
+        return os.path.join(GetModeVar(self.options,mode,'objectDir'),SetExtension('*',GetModeVar(self.options,mode,'objectExtension')))
 
-    def GetObjectFromSource(self,src):
-        return os.path.join(self.options['objectDir'],SetExtension(os.path.basename(src),self.options['objectExtension']))
+    def GetObjectFromSource(self,mode,src):
+        return os.path.join(GetModeVar(self.options,mode,'objectDir'),SetExtension(os.path.basename(src),GetModeVar(self.options,mode,'objectExtension')))
 
-    def GetCompileCommand(self,file,mode):
-        cmd = self.options['compileCommand']
+    def GetOutputPath(self,mode):
+        return os.path.join(GetModeVar(self.options,mode,'outputDir'),GetModeVar(self.options,mode,'outputName'))
+
+    def GetCompileCommand(self,mode,file):
+        cmd = GetModeVar(self.options,mode,'compileCommand')
         filePlaced = False
-        objVersion = self.GetObjectFromSource(file)
-        for flag in self.options['compileFlags'][mode]:
+        objVersion = self.GetObjectFromSource(mode,file)
+        compileFlags = GetModeCompileFlags(self.options,mode)
+        for flag in compileFlags:
             if flag == '':
                 continue
 
@@ -204,12 +208,13 @@ class Builder:
         return cmd
 
     def GetLinkCommand(self,mode):
-        cmd = self.options['linkCommand']
+        cmd = GetModeVar(self.options,mode,'linkCommand')
         inputFilesPlaced = False
-        inputFiles = self.GetObjectsPath()
-        outputFile = os.path.join(self.options['outputDir'],self.options['outputName'])
+        inputFiles = self.GetObjectsPath(mode)
+        outputFile = self.GetOutputPath(mode)
 
-        for flag in self.options['linkFlags'][mode]:
+        linkFlags = GetModeLinkFlags(self.options,mode)
+        for flag in linkFlags: 
             if flag == '':
                 continue
 
@@ -233,34 +238,41 @@ class Builder:
 
         return cmd
     
-    def Scan(self):
-        self.CollectAllCompilables(self.options['sourceDir'])
+    def Scan(self,mode):
+        self.CollectAllCompilables(GetModeVar(self.options,mode,'sourceDir'),GetModeVar(self.options,mode,'sourceExtension'))
         self.InvertDependencies()
-        self.GetRebuildSet()
+        self.GetRebuildSet(mode)
 
     def Build(self,mode):
-        self.Scan()
- 
         if mode=='':
             mode = self.options['defaultMode']
             self.InfoPrint(f"{TextColor(WHITE,1)}Using default mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
+        else:
+            if mode not in self.options['modes']:
+                self.InfoPrint(f"{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not found!")
+                self.InfoPrint(ExitingMsg())
+                quit()
+            
+            self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
 
+        self.Scan(mode)
 
         errored = False
         cmd = ''
 
         compileCount = len(self.rebuildSet)
-        if compileCount!=0 and self.options['compileCommand']!='':
+        # compilation
+        if compileCount!=0 and GetModeVar(self.options,mode,'compileCommand')!='':
             self.InfoPrint(f'{TextColor(WHITE,1)}Building {TextColor(CYAN,1)}{compileCount}{TextColor(WHITE,1)} files...')
             
 
             for i,file in enumerate(self.rebuildSet):
-                cmd = self.GetCompileCommand(file,mode)
+                cmd = self.GetCompileCommand(mode,file)
                 if self.debug:
                     self.InfoPrint(f'{TextColor(GREEN)}{i+1}/{compileCount}: {TextColor(BLUE)}{cmd}{ResetTextColor()}')
                 else:
                     src = file
-                    obj = self.GetObjectFromSource(src)
+                    obj = self.GetObjectFromSource(mode,src)
                     self.InfoPrint(f'{TextColor(GREEN)}Building ({i+1}/{compileCount}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}{ResetTextColor()}')
                 code = os.system(cmd)
                 if code!=0:
@@ -272,15 +284,16 @@ class Builder:
                 self.InfoPrint(f"{TextColor(RED)}Exiting...{ResetTextColor()}")
                 return
 
-        if self.options['linkCommand']!='':
+        # linking
+        if GetModeVar(self.options,mode,'linkCommand')!='':
             self.InfoPrint(f'{TextColor(WHITE,1)}Linking executable...{ResetTextColor()}')
 
             cmd = self.GetLinkCommand(mode)
             if self.debug:
                 self.InfoPrint(f'{TextColor(BLUE)}{cmd}{ResetTextColor()}')
             else:
-                src = self.GetObjectsPath()
-                dest = os.path.join(self.options['outputDir'],self.options['outputName'])
+                src = self.GetObjectsPath(mode)
+                dest = self.GetOutputPath(mode)
                 self.InfoPrint(f'{TextColor(GREEN)}Linking: {TextColor(BLUE)}{src} {TextColor(WHITE,1)}-> {TextColor(GREEN,1)}{dest}{ResetTextColor()}')
             code = os.system(cmd)
 
@@ -289,10 +302,16 @@ class Builder:
 
         self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
     
-    def Clean(self):
+    def Clean(self,mode):
+        if mode not in self.options['modes']:
+            self.InfoPrint(f"{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not found!")
+            self.InfoPrint(ExitingMsg())
+            quit()
+            
+        self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
         self.InfoPrint(f"{TextColor(WHITE,1)}Cleaning up...{TextColor(YELLOW)}")
-        if self.DirContainsObjects():
-            path = SetExtension(os.path.join(self.options['objectDir'],'*'),self.options['objectExtension'])
+        if self.DirContainsObjects(mode):
+            path = self.GetObjectsPath(mode)
             cmd = f"rm {path}"
             if self.debug:
                 self.InfoPrint(cmd)
@@ -301,7 +320,7 @@ class Builder:
             os.system(cmd)
         
         
-        path = os.path.join(self.options['outputDir'],self.options['outputName'])
+        path = self.GetOutputPath(mode)
         if os.path.exists(path):
             cmd = f"rm {path}"
             if self.debug:
@@ -316,48 +335,148 @@ class Builder:
 def ExitingMsg():
     return f"{TextColor(RED)}Exiting...{ResetTextColor()}"
 
-def GetOptionsFromFile():
-    if not os.path.exists('./builder.json'):
-        print(f"{TextColor(RED,1)}No builder.json file found!{ResetTextColor()}")
+def GetModeCompileFlags(options,mode):
+    flags = []
+    if 'compileFlags' in options['modes'][mode]:
+        flags += options['modes'][mode]['compileFlags']
+
+    if 'compileFlags' in options:
+        flags += options['compileFlags']
+
+    return flags
+
+def GetModeLinkFlags(options,mode):
+    flags = []
+    if 'linkFlags' in options['modes'][mode]:
+        flags += options['modes'][mode]['linkFlags']
+
+    if 'linkFlags' in options:
+        flags += options['linkFlags']
+
+    return flags
+
+def GetModeVar(options,mode,varName): # return a mode var, falling back to the root dict if not available in mode
+    if varName in options['modes'][mode]:
+        return options['modes'][mode][varName]
+
+    if varName in options:
+        return options[varName]
+
+    return None
+
+def VarInOptions(options,mode,varName):
+    if varName in options['modes'][mode]:
+        return True
+    
+    if varName in options:
+        return True
+
+    return False
+
+def VarNeverNull(options,varName): # is the var never undefined in any mode?
+    if varName in options:
+        return True
+
+    for mode in options['modes']:
+        if varName in options['modes'][mode]:
+            return True
+
+    return False
+
+def GetUndefinedModes(options,varName): # get all modes for which this var is undefined
+    modes = []
+    for mode in options['modes']:
+        if varName not in options['modes'][mode]:
+            modes.append(mode)
+    return modes
+
+def VerifyModesTypes(modes):
+    for mode in modes:
+        if type(modes[mode])!=dict:
+            print(f'{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} must be of type dict!')
+            print(ExitingMsg())
+            quit()
+        
+        error = False
+        for key in modes[mode]:
+            item = modes[mode][key]
+            if type(item) not in [str,list]:
+                print(f'{TextColor(RED,1)}Type of "{key}" in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} is not a string or a list!')
+                error = True
+
+        if error:
+            print(ExitingMsg())
+            quit()
+
+def FixDirs(options):
+    dirs = ['sourceDir','objectDir','outputDir']
+
+    for d in dirs:
+        modes = options['modes']
+        for mode in modes:
+            if d in modes[mode]:
+                if modes[mode][d]=='':
+                    modes[mode][d] = '.'
+        if d in options:
+            if options[d]=='':
+                options[d] = '.'
+
+
+def GetOptionsFromFile(file):
+    if not os.path.exists(f"./{file}"):
+        print(f"{TextColor(RED,1)}No {file} file found!{ResetTextColor()}")
         print(ExitingMsg())
         quit()
 
     s = ''
-    with open('builder.json','r') as f:
+    with open(file,'r') as f:
         s = f.read()
     
     op = json.JSONDecoder().decode(s)
 
     error = False
 
-    cc = False
-    lc = False
+    if 'modes' not in op:
+        print(f'{TextColor(RED,1)}Builder file must specify "modes"!')
+        print(ExitingMsg())
+        quit()
+    elif type(op['modes'])!=dict:
+        print(f'{TextColor(RED,1)}Expected "modes" to be of type dict!')
+        print(ExitingMsg())
+        quit()
+    elif len(op['modes'])==0:
+        print(f'{TextColor(RED,1)}Builder file must specify at least one mode in "modes"!')
+        print(ExitingMsg())
+        quit()
+
+    modes = op['modes']
+
+    VerifyModesTypes(modes)
+
+    if not VarNeverNull(op,'compileCommand'):
+        for mode in GetUndefinedModes(op,'compileCommand'):
+            print(f'{TextColor(RED,1)}Option "compileCommand" is unspecified in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
+        print(f'{TextColor(RED,1)}Builder file must specify "compileCommand"!')
+        error = True
 
     if 'compileCommand' not in op:
-        print(f'{TextColor(RED,1)}builder.json must specify "compileCommand"!')
+        op['compileCommand'] = ''
+    
+    if not VarNeverNull(op,'linkCommand'):
+        for mode in GetUndefinedModes(op,'linkCommand'):
+            print(f'{TextColor(RED,1)}Option "linkCommand" is unspecified in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
+        print(f'{TextColor(RED,1)}Builder file must specify "linkCommand"!')
         error = True
-    else:
-        cc = op['compileCommand']!=''
 
     if 'linkCommand' not in op:
-        print(f'{TextColor(RED,1)}builder.json must specify "linkCommand"!')
-        error = True
-    else:
-        lc = op['linkCommand']!=''
+        op['linkCommand'] = ''
 
     if 'outputName' not in op:
         op['outputName'] = 'a'
 
-    if 'modes' not in op:
-        print(f'{TextColor(RED,1)}builder.json must specify "modes"!')
-        error = True
-    elif len(op['modes'])==0:
-        print(f'{TextColor(RED,1)}builder.json must specify at least one mode in "modes"!')
-        error = True
 
     if 'defaultMode' not in op:
-        if 'modes' in op and len(op['modes'])!=0:
-            op['defaultMode'] = op['modes'][0]
+        op['defaultMode'] = list(op['modes'].keys())[0]
 
     if 'sourceExtension' not in op:
         op['sourceExtension'] = 'cpp'
@@ -368,9 +487,13 @@ def GetOptionsFromFile():
     if 'objectExtension' not in op:
         op['objectExtension'] = 'o'
 
-    if 'sourceDir' not in op:
-        print(f'{TextColor(RED,1)}builder.json must specify "sourceDir"!')
+    if not VarNeverNull(op,'sourceDir'):
+        for mode in GetUndefinedModes(op,'sourceDir'):
+            print(f'{TextColor(RED,1)}Option "sourceDir" is unspecified in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
+
+        print(f'{TextColor(RED,1)}Builder file must specify "sourceDir"!')
         error = True
+    
 
     if 'objectDir' not in op:
         op['objectDir'] = '.'
@@ -378,26 +501,21 @@ def GetOptionsFromFile():
     if 'outputDir' not in op:
         op['outputDir'] = '.'
 
-    if cc:
-        if 'compileFlags' not in op:
-            print(f'{TextColor(RED,1)}builder.json must specify "compileFlags" in order to compile!')
-            error = True
-        else:
-            for mode in op['modes']:
-                if mode not in op['compileFlags']:
-                    print(f'{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not included in "compileFlags"!')
-                    error = True
+    FixDirs(op)
 
-    if lc:
-        if 'linkFlags' not in op:
-            print(f'{TextColor(RED,1)}builder.json must specify "linkFlags" in order to link!')
-            error = True
-        else:
-            for mode in op['modes']:
-                if mode not in op['linkFlags']:
-                    print(f'{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not included in "linkFlags"!')
-                    error = True
+    if not VarNeverNull(op,'compileFlags'):
+        for mode in GetUndefinedModes(op,'compileFlags'):
+            if GetModeVar(op,mode,'compileCommand')!='':
+                # if compileCommand is specified for this mode it needs to have a list of compileFlags
+                print(f'{TextColor(RED,1)}Option "compileFlags" is unspecified while "compileCommand" is non-empty in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
+                error = True
 
+    if not VarNeverNull(op,'linkFlags'):
+        for mode in GetUndefinedModes(op,'linkFlags'):
+            if GetModeVar(op,mode,'linkCommand')!='':
+                # if linkCommand is specified for this mode it needs to have a list of linkFlags
+                print(f'{TextColor(RED,1)}Option "linkFlags" is unspecified while "linkCommand" is non-empty in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
+                error = True
 
     if error:
         print(ExitingMsg())
@@ -408,20 +526,30 @@ def GetOptionsFromFile():
 
 def main():    
     global noColor
+    name = 'builder'
+    builderVersion = '0.0.1'
 
-    parser = argparse.ArgumentParser(description="Only builds what needs to be built.")
+    parser = argparse.ArgumentParser(prog='builder',description="Only builds what needs to be built.")
     group = parser.add_mutually_exclusive_group()
     parser.add_argument("mode",default='',help="specify the set of flags to use",nargs='?')
-    parser.add_argument("--clean",help="remove all object files and output",action="store_true")
+    parser.add_argument("-b",metavar='FILE',default='builder.json',help="specify name of builder file to use (default builder.json)")
+    parser.add_argument("-c","--clean",help="remove all object files and output",action="store_true")
     group.add_argument("-v","--verbose",help="print more info for debugging",action="store_true")
     group.add_argument('-q','--quiet',help='silence all output (from this program)',action='store_true')
     parser.add_argument("--nocolor",help="disables output of color (turn this on if redirecting to a file)",action="store_true")
+    parser.add_argument("--version",action="store_true",help='show program\'s version number and exit')
     args = parser.parse_args()
 
     if args.nocolor:
         noColor = True
 
-    options = GetOptionsFromFile()
+    builderFile = args.b
+
+    if args.version:
+        print(f'{TextColor(WHITE,1)}{name} {TextColor(CYAN,1)}{builderVersion}{ResetTextColor()}')
+        quit()
+
+    options = GetOptionsFromFile(builderFile)
 
     b = Builder(options,CPPDeps)
     if args.verbose:
@@ -431,9 +559,17 @@ def main():
         b.quiet = True
 
     if args.clean:
-        b.Clean()
+        if args.mode=='' or args.mode=='all':
+            for mode in options['modes']:
+                b.Clean(mode)
+        else:
+            b.Clean(args.mode)
     else:
-        b.Build(args.mode)
+        if args.mode=='all':
+            for mode in options['modes']:
+                b.Build(mode)
+        else:
+            b.Build(args.mode)
 
     print(ResetTextColor(),end='')
 
