@@ -174,8 +174,10 @@ class Builder:
                 for srcFile in headerSet:
                     objFile = self.GetObjectFromSource(mode,srcFile)
                     if headerAge>=GetFileTime(objFile):
+                        if self.debug:
+                            if srcFile not in self.rebuildSet:
+                                self.DebugPrint(f"Adding source file {srcFile}\nReason: found in outdated header cascade")
                         self.rebuildSet.add(srcFile)
-                        self.DebugPrint(f"Adding source file {srcFile}\nReason: found in outdated header cascade")
 
     def GetObjectsPath(self,mode):
         return os.path.join(GetModeVar(self.options,mode,'objectDir'),SetExtension('*',GetModeVar(self.options,mode,'objectExtension')))
