@@ -488,6 +488,22 @@ def FixDirs(options):
             if options[d]=='':
                 options[d] = '.'
 
+def TestDirs(options):
+    dirs = ['sourceDir','objectDir','outputDir']
+
+    error = False
+
+    for d in dirs:
+        modes = options['modes']
+        for mode in modes:
+            test = GetModeVar(options,mode,d)
+            if not os.path.exists(test):
+                print(f'{TextColor(RED,1)}Path "{test}" of "{d}" does not exist!')
+                error = True
+
+    if error:
+        print(ExitingMsg())
+        quit()
 
 def GetOptionsFromFile(file):
     if not os.path.exists(f"./{file}"):
@@ -569,6 +585,8 @@ def GetOptionsFromFile(file):
         op['outputDir'] = '.'
 
     FixDirs(op)
+
+    TestDirs(op)
 
     if not VarNeverNull(op,'compileFlags'):
         for mode in GetUndefinedModes(op,'compileFlags'):
