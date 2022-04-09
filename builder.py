@@ -515,7 +515,13 @@ def GetOptionsFromFile(file):
     with open(file,'r') as f:
         s = f.read()
     
-    op = json.JSONDecoder().decode(s)
+    try:
+        op = json.JSONDecoder().decode(s)
+    except json.decoder.JSONDecodeError as e:
+        print(f'{TextColor(RED,1)}JSON Decode Error ({file}):')
+        print('\t'+str(e))
+        print(ExitingMsg())
+        quit()
 
     error = False
 
