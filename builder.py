@@ -1,6 +1,6 @@
 #!/bin/python
 
-import os,argparse,json
+import sys,os,subprocess,argparse,json,threading,time
 
 RED = 1
 GREEN = 2
@@ -79,6 +79,10 @@ class Builder:
         self.debug = False
         self.quiet = False
 
+        self.commandFailed = False
+        self.failLock = threading.Lock()
+        self.printLock = threading.Lock()
+
     def DebugPrint(self,msg):
         if self.debug:
             self.InfoPrint(msg)
@@ -86,6 +90,10 @@ class Builder:
     def InfoPrint(self,msg):
         if not self.quiet:
             print(msg)
+
+    def ThreadedPrint(self,msg):
+        with self.printLock:
+            self.InfoPrint(msg)
 
     def DirContainsObjects(self,mode):
         l = os.listdir(GetModeVar(self.options,mode,'objectDir'))
@@ -238,10 +246,66 @@ class Builder:
 
         return cmd
     
+    def RunCommand(self,cmd):
+        p = subprocess.Popen(cmd,stdout=sys.stdout,stderr=sys.stderr,shell=True)
+        return p.wait()
+
     def Scan(self,mode):
         self.CollectAllCompilables(GetModeVar(self.options,mode,'sourceDir'),GetModeVar(self.options,mode,'sourceExtension'))
         self.InvertDependencies()
         self.GetRebuildSet(mode)
+
+    def BuildObjectsFromList(self,l):
+        code = 0
+        threadName = threading.current_thread().name
+        i = 1
+
+        for src,obj,cmd in l:
+            if self.debug:
+                self.ThreadedPrint(f"{TextColor(BLUE)}{cmd}{ResetTextColor()}")
+            else:
+                self.ThreadedPrint(f'{TextColor(WHITE,1)}[{TextColor(CYAN,1)}{threadName}{TextColor(WHITE,1)}] {TextColor(GREEN)}Building ({i}/{len(l)}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}{ResetTextColor()}')
+
+            code = self.RunCommand(cmd)
+            if code!=0:
+                self.SetCommandFailed()
+                break
+            i += 1
+
+        return code
+
+    def HasCommandFailed(self):
+        with self.failLock:
+            return self.commandFailed
+
+    def SetCommandFailed(self):
+        with self.failLock:
+            self.commandFailed = True
+
+    def CommandFailedQuit(self):
+        if self.HasCommandFailed():
+            self.ThreadedPrint(f"{TextColor(RED,1)}Not all files were successfully compiled!\n{ExitingMsg()}")
+            quit()
+
+
+    def DispatchCommands(self,cmdList):
+        cores = os.cpu_count()
+        threads = []
+
+        for i in range(cores):
+            cmds = cmdList[i::cores]
+            thread = threading.Thread(target=self.BuildObjectsFromList,args=(cmds,),name=str(i+1))
+            thread.start()
+            threads.append(thread)
+        
+        try:
+            while threading.active_count()!=1:
+                self.CommandFailedQuit()
+                time.sleep(0.2)
+        except KeyboardInterrupt:
+            self.SetCommandFailed()
+
+        self.CommandFailedQuit()
 
     def Build(self,mode):
         if mode=='':
@@ -265,19 +329,22 @@ class Builder:
         if compileCount!=0 and GetModeVar(self.options,mode,'compileCommand')!='':
             self.InfoPrint(f'{TextColor(WHITE,1)}Building {TextColor(CYAN,1)}{compileCount}{TextColor(WHITE,1)} files...')
             
+            cmdList = [(file,self.GetObjectFromSource(mode,file),self.GetCompileCommand(mode,file)) for i,file in enumerate(self.rebuildSet)]
+            
+            self.DispatchCommands(cmdList)
 
-            for i,file in enumerate(self.rebuildSet):
-                cmd = self.GetCompileCommand(mode,file)
-                if self.debug:
-                    self.InfoPrint(f'{TextColor(GREEN)}{i+1}/{compileCount}: {TextColor(BLUE)}{cmd}{ResetTextColor()}')
-                else:
-                    src = file
-                    obj = self.GetObjectFromSource(mode,src)
-                    self.InfoPrint(f'{TextColor(GREEN)}Building ({i+1}/{compileCount}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}{ResetTextColor()}')
-                code = os.system(cmd)
-                if code!=0:
-                    errored = True
-                    break
+##            for i,file in enumerate(self.rebuildSet):
+  ##              cmd = self.GetCompileCommand(mode,file)
+    ##            if self.debug:
+      ##              self.InfoPrint(f'{TextColor(GREEN)}{i+1}/{compileCount}: {TextColor(BLUE)}{cmd}{ResetTextColor()}')
+        ##        else:
+          ##          src = file
+            ##        obj = self.GetObjectFromSource(mode,src)
+              ##      self.InfoPrint(f'{TextColor(GREEN)}Building ({i+1}/{compileCount}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}{ResetTextColor()}')
+                ##code = os.system(cmd)
+                #if code!=0:
+                 #   errored = True
+                  #  break
 
             if errored:
                 self.InfoPrint(f"{TextColor(RED,1)}Not all files were successfully compiled!{ResetTextColor()}")
@@ -295,7 +362,7 @@ class Builder:
                 src = self.GetObjectsPath(mode)
                 dest = self.GetOutputPath(mode)
                 self.InfoPrint(f'{TextColor(GREEN)}Linking: {TextColor(BLUE)}{src} {TextColor(WHITE,1)}-> {TextColor(GREEN,1)}{dest}{ResetTextColor()}')
-            code = os.system(cmd)
+            code = self.RunCommand(cmd)
 
             if code!=0:
                 self.InfoPrint(f"{TextColor(RED,1)}Linker error!{ResetTextColor()}")
@@ -317,8 +384,7 @@ class Builder:
                 self.InfoPrint(cmd)
             else:
                 self.InfoPrint(f"{TextColor(YELLOW)}Removing {path}")
-            os.system(cmd)
-        
+            self.RunCommand(cmd)
         
         path = self.GetOutputPath(mode)
         if os.path.exists(path):
@@ -327,7 +393,8 @@ class Builder:
                 self.InfoPrint(cmd)
             else:
                 self.InfoPrint(f"{TextColor(YELLOW)}Removing {path}")
-            os.system(cmd)
+
+            self.RunCommand(cmd)
 
         self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
 
@@ -536,22 +603,34 @@ def main():
     parser.add_argument("-c","--clean",help="remove all object files and output",action="store_true")
     group.add_argument("-v","--verbose",help="print more info for debugging",action="store_true")
     group.add_argument('-q','--quiet',help='silence all output (from this program)',action='store_true')
-    parser.add_argument("--nocolor",help="disables output of color (turn this on if redirecting to a file)",action="store_true")
+    parser.add_argument("--log",metavar="FILE",default="",help="write all output to the specified log file")
+    parser.add_argument("--nocolor",help="disables output of color escape sequences",action="store_true")
     parser.add_argument("--version",action="store_true",help='show program\'s version number and exit')
     args = parser.parse_args()
 
-    if args.nocolor:
+    if args.nocolor or not sys.stdout.isatty():
         noColor = True
 
-    builderFile = args.b
+
+    builderLog = ''
+
+    if args.log:
+        noColor = True
+        sys.stdout.close()
+        f = open(args.log,'w')
+        sys.stdout = f
+        sys.stderr = f
 
     if args.version:
         print(f'{TextColor(WHITE,1)}{name} {TextColor(CYAN,1)}{builderVersion}{ResetTextColor()}')
         quit()
 
+    builderFile = args.b
+
     options = GetOptionsFromFile(builderFile)
 
     b = Builder(options,CPPDeps)
+
     if args.verbose:
         b.debug = True
     
