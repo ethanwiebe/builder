@@ -104,6 +104,9 @@ class Builder:
         return False
 
     def FindFileDependencies(self,path):
+        if not os.path.exists(path):
+            return
+
         deps = self.depExtractFunc(path)
         self.depdict[path] = deps
         for d in deps:
