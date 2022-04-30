@@ -126,16 +126,19 @@ class Builder:
                 self.invdict[dep].add(file)
         return self.invdict
 
-    def HeaderFileCascade(self,mode,headerFile,cascadeSet=None): #return all source files affected by a header file
+    def HeaderFileCascade(self,mode,headerFile,cascadeSet=None,checkedHeadersSet=None): #return all source files affected by a header file
         if cascadeSet == None:
             cascadeSet = set()
+            checkedHeadersSet = set()
 
         children = self.invdict[headerFile]
         for child in children:
             if GetExtension(child)==GetModeVar(self.options,mode,'sourceExtension'):
                 cascadeSet.add(child)
             elif GetExtension(child)==GetModeVar(self.options,mode,'headerExtension'):
-                cascadeSet = self.HeaderFileCascade(mode,child,cascadeSet)
+                if child not in checkedHeadersSet:
+                    checkedHeadersSet.add(child)
+                    cascadeSet = self.HeaderFileCascade(mode,child,cascadeSet,checkedHeadersSet)
 
         return cascadeSet
         
