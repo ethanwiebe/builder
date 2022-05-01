@@ -263,16 +263,16 @@ class Builder:
         self.InvertDependencies()
         self.GetRebuildSet(mode)
 
-    def BuildObjectsFromList(self,l):
+    def BuildObjectsFromList(self,l,totalCount):
         code = 0
         threadName = threading.current_thread().name
         i = 1
 
-        for src,obj,cmd in l:
+        for src,obj,cmd,index in l:
             if self.debug:
                 self.ThreadedPrint(f"{TextColor(BLUE)}{cmd}{ResetTextColor()}")
             else:
-                self.ThreadedPrint(f'{TextColor(WHITE,1)}[{TextColor(CYAN,1)}{threadName}{TextColor(WHITE,1)}] {TextColor(GREEN)}Building ({i}/{len(l)}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}{ResetTextColor()}')
+                self.ThreadedPrint(f'{TextColor(WHITE,1)}[{TextColor(CYAN,1)}{threadName}{TextColor(WHITE,1)}] {TextColor(GREEN)}Building ({index+1}/{totalCount}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}{ResetTextColor()}')
 
             code = self.RunCommand(cmd)
             if code!=0:
@@ -296,13 +296,13 @@ class Builder:
             quit()
 
 
-    def DispatchCommands(self,cmdList):
+    def DispatchCommands(self,cmdList,totalCount):
         cores = os.cpu_count()
         threads = []
 
         for i in range(cores):
             cmds = cmdList[i::cores]
-            thread = threading.Thread(target=self.BuildObjectsFromList,args=(cmds,),name=str(i+1))
+            thread = threading.Thread(target=self.BuildObjectsFromList,args=(cmds,totalCount),name=str(i+1))
             thread.start()
             threads.append(thread)
         
@@ -337,26 +337,12 @@ class Builder:
         if compileCount!=0 and GetModeVar(self.options,mode,'compileCommand')!='':
             self.InfoPrint(f'{TextColor(WHITE,1)}Building {TextColor(CYAN,1)}{compileCount}{TextColor(WHITE,1)} files...')
             
-            cmdList = [(file,self.GetObjectFromSource(mode,file),self.GetCompileCommand(mode,file)) for i,file in enumerate(self.rebuildSet)]
+            cmdList = [(file,self.GetObjectFromSource(mode,file),self.GetCompileCommand(mode,file),i) for i,file in enumerate(self.rebuildSet)]
             
-            self.DispatchCommands(cmdList)
-
-##            for i,file in enumerate(self.rebuildSet):
-  ##              cmd = self.GetCompileCommand(mode,file)
-    ##            if self.debug:
-      ##              self.InfoPrint(f'{TextColor(GREEN)}{i+1}/{compileCount}: {TextColor(BLUE)}{cmd}{ResetTextColor()}')
-        ##        else:
-          ##          src = file
-            ##        obj = self.GetObjectFromSource(mode,src)
-              ##      self.InfoPrint(f'{TextColor(GREEN)}Building ({i+1}/{compileCount}): {TextColor(YELLOW)}{src} {TextColor(WHITE,1)}-> {TextColor(BLUE)}{obj}{ResetTextColor()}')
-                ##code = os.system(cmd)
-                #if code!=0:
-                 #   errored = True
-                  #  break
-
+            self.DispatchCommands(cmdList,compileCount)
             if errored:
                 self.InfoPrint(f"{TextColor(RED,1)}Not all files were successfully compiled!{ResetTextColor()}")
-                self.InfoPrint(f"{TextColor(RED)}Exiting...{ResetTextColor()}")
+                self.InfoPrint(f"{ExitingMsg()}")
                 return
 
         # linking
@@ -408,7 +394,7 @@ class Builder:
 
 
 def ExitingMsg():
-    return f"{TextColor(RED)}Exiting...{ResetTextColor()}"
+    return f"{TextColor(RED,1)}Exiting...{ResetTextColor()}"
 
 def GetModeCompileFlags(options,mode):
     flags = []
