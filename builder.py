@@ -26,15 +26,28 @@ def TextColor(color,bold=0):
 
     return f'\x1b[{bold};{30+color}m'
 
+def GetNumSize(num):
+    c = 1
+    while num>9:
+        num //= 10
+        c+=1
+    return c
+
 def IsObjFileOutdated(srcFile,objFile):
     return GetFileTime(srcFile)>=GetFileTime(objFile)
-
 
 def GetFileTime(filename):
     if not os.path.exists(filename):
         return 0
     
     return int(os.path.getmtime(filename))
+
+def GetFileSizes(files):
+    s = 0
+    for file in files:
+        s += os.path.getsize(file)
+
+    return s
 
 def GetExtension(filename):
     return os.path.splitext(filename)[1][1:]
@@ -315,16 +328,24 @@ class Builder:
 
         self.CommandFailedQuit()
 
+    def GetDefaultMode(self):
+        return self.options['defaultMode']
+
+    def ModeNotFoundError(self,mode):
+        self.InfoPrint(f"{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not found!")
+        self.InfoPrint(ExitingMsg())
+        quit()
+
+    def Done(self):
+        self.InfoPrint(f'{TextColor(WHITE,1)}Done!{ResetTextColor()}')
+
     def Build(self,mode):
         if mode=='':
-            mode = self.options['defaultMode']
+            mode = self.GetDefaultMode()
             self.InfoPrint(f"{TextColor(WHITE,1)}Using default mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
         else:
             if mode not in self.options['modes']:
-                self.InfoPrint(f"{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not found!")
-                self.InfoPrint(ExitingMsg())
-                quit()
-            
+                self.ModeNotFoundError(mode)
             self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
 
         self.Scan(mode)
@@ -390,7 +411,30 @@ class Builder:
 
             self.RunCommand(cmd)
 
-        self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
+        self.Done()
+
+    
+
+    def Stats(self,mode):
+        if mode=='':
+            mode = self.GetDefaultMode()
+        elif mode not in self.options['modes']:
+            self.ModeNotFoundError(mode)
+
+
+        self.Scan(mode)
+        totalSize = GetFileSizes(self.depdict.keys())//1024
+        fileCount = len(self.depdict)
+        sourceCount = len(self.compileFiles)
+
+        justSize = max(GetNumSize(totalSize),GetNumSize(fileCount),GetNumSize(sourceCount))+1
+
+        self.InfoPrint(f"{TextColor(WHITE,1)}Project Stats:")
+        self.InfoPrint(f"{TextColor(YELLOW)}File count:   {TextColor(CYAN,1)}{str(fileCount).rjust(justSize)}")
+        self.InfoPrint(f"{TextColor(YELLOW)}Source count: {TextColor(CYAN,1)}{str(sourceCount).rjust(justSize)}\n")
+
+        
+        self.InfoPrint(f"{TextColor(YELLOW,1)}Code size:    {TextColor(GREEN,1)}{str(totalSize).rjust(justSize)}{TextColor(WHITE,1)}K{ResetTextColor()}")
 
 
 def ExitingMsg():
@@ -621,6 +665,7 @@ def main():
     parser.add_argument("-c","--clean",help="remove all object files and output",action="store_true")
     group.add_argument("-v","--verbose",help="print more info for debugging",action="store_true")
     group.add_argument('-q','--quiet',help='silence all output (from this program)',action='store_true')
+    parser.add_argument("--stats",action="store_true",help="print stats about project")
     parser.add_argument("--log",metavar="FILE",default="",help="write all output to the specified log file")
     parser.add_argument("--nocolor",help="disables output of color escape sequences",action="store_true")
     parser.add_argument("--version",action="store_true",help='show program\'s version number and exit')
@@ -644,9 +689,7 @@ def main():
         quit()
 
     builderFile = args.b
-
     options = GetOptionsFromFile(builderFile)
-
     b = Builder(options,CPPDeps)
 
     if args.verbose:
@@ -654,6 +697,10 @@ def main():
     
     if args.quiet:
         b.quiet = True
+
+    if args.stats:
+        b.Stats(args.mode)
+        quit()
 
     if args.clean:
         if args.mode=='' or args.mode=='all':
