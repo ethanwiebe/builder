@@ -42,6 +42,9 @@ def GetFileTime(filename):
     
     return int(os.path.getmtime(filename))
 
+def SortByFileTimesIP(files):
+    files.sort(reverse=True,key=GetFileTime)
+
 def GetFileSizes(files):
     s = 0
     for file in files:
@@ -198,6 +201,9 @@ class Builder:
                                 self.DebugPrint(f"Adding source file {srcFile}\nReason: found in outdated header cascade")
                         self.rebuildSet.add(srcFile)
 
+        self.rebuildList = list(self.rebuildSet)
+        SortByFileTimesIP(self.rebuildList)
+
     def GetObjectsPath(self,mode):
         return os.path.join(GetModeVar(self.options,mode,'objectDir'),SetExtension('*',GetModeVar(self.options,mode,'objectExtension')))
 
@@ -353,12 +359,12 @@ class Builder:
         errored = False
         cmd = ''
 
-        compileCount = len(self.rebuildSet)
+        compileCount = len(self.rebuildList)
         # compilation
         if compileCount!=0 and GetModeVar(self.options,mode,'compileCommand')!='':
             self.InfoPrint(f'{TextColor(WHITE,1)}Building {TextColor(CYAN,1)}{compileCount}{TextColor(WHITE,1)} files...')
             
-            cmdList = [(file,self.GetObjectFromSource(mode,file),self.GetCompileCommand(mode,file),i) for i,file in enumerate(self.rebuildSet)]
+            cmdList = [(file,self.GetObjectFromSource(mode,file),self.GetCompileCommand(mode,file),i) for i,file in enumerate(self.rebuildList)]
             
             self.DispatchCommands(cmdList,compileCount)
             if errored:
