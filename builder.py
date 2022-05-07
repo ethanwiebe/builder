@@ -42,6 +42,13 @@ def GetFileTime(filename):
     
     return int(os.path.getmtime(filename))
 
+def MakePath(path): #path guaranteed does not exist
+    path = os.path.normpath(path)
+    upper = os.path.dirname(path)
+    if not os.path.exists(upper) and upper:
+        MakePath(upper)
+    os.mkdir(path)
+
 def SortByFileTimesIP(files):
     files.sort(reverse=True,key=GetFileTime)
 
@@ -535,20 +542,14 @@ def FixDirs(options):
 def TestDirs(options):
     dirs = ['sourceDir','objectDir','outputDir']
 
-    error = False
-
     for d in dirs:
         modes = options['modes']
         for mode in modes:
             test = GetModeVar(options,mode,d)
             if not os.path.exists(test):
-                print(f'{TextColor(RED,1)}Path "{test}" of "{d}" does not exist!')
-                error = True
-
-    if error:
-        print(ExitingMsg())
-        quit()
-
+                print(f'{TextColor(YELLOW)}Creating {test}{ResetTextColor()}')
+                MakePath(test)
+    
 def GetOptionsFromFile(file):
     if not os.path.exists(f"./{file}"):
         print(f"{TextColor(RED,1)}No {file} file found!{ResetTextColor()}")
