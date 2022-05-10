@@ -112,7 +112,7 @@ class Builder:
 
     def InfoPrint(self,msg):
         if not self.quiet:
-            print(msg)
+            print(msg,flush=True)
 
     def ThreadedPrint(self,msg):
         with self.printLock:
@@ -127,7 +127,11 @@ class Builder:
         return False
 
     def FindFileDependencies(self,path):
-        if not os.path.exists(path) or not self.depExtractFunc:
+        if not os.path.exists(path):
+            return
+
+        if not self.depExtractFunc:
+            self.depdict[path] = set()
             return
 
         deps = self.depExtractFunc(path)
@@ -135,10 +139,6 @@ class Builder:
         for d in deps:
             if d not in self.depdict: #if dependency not tracked, add it and recursively search for more deps
                 self.FindFileDependencies(d)
-    
-    def FindAllDependenciesFrom(self,mainPath):
-        self.depdict = {}
-        self.FindFileDependencies(mainPath)
     
     def InvertDependencies(self):
         self.invdict = {}
@@ -223,37 +223,43 @@ class Builder:
     def GetOutputPath(self,mode):
         return os.path.join(GetModeVar(self.options,mode,'outputDir'),GetModeVar(self.options,mode,'outputName'))
 
+    def GetBuilderPath(self):
+        return os.path.abspath(__file__)
+
+    def ResolveFlag(self,mode,flag):
+        if flag[:2]=='%%': return flag[1:]
+        if flag=='%mode':
+            return mode
+        if flag=='%self':
+            return self.GetBuilderPath()
+        if flag=='%time':
+            return str(int(time.time()))
+
+        print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %output, %input, %mode, %self, %time")
+        ErrorExit()
+
     def GetCompileCommand(self,mode,file):
         cmd = GetModeVar(self.options,mode,'compileCommand')
-        filePlaced = False
         objVersion = self.GetObjectFromSource(mode,file)
         compileFlags = GetModeCompileFlags(self.options,mode)
         for flag in compileFlags:
             if flag == '':
                 continue
 
-            if flag[:2]=='%%': #escaped %
-                flag = flag[1:]
-            elif flag[0]=='%':
+            if flag[0]=='%':
                 if flag[1:] == 'output':
                     flag = objVersion
                 elif flag[1:] == 'input':
-                    filePlaced = True
                     flag = file
                 else:
-                    print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %output and %input")
-                    ErrorExit()
+                    flag = self.ResolveFlag(mode,flag)
             
             cmd += ' '+flag
-
-        if not filePlaced:
-            cmd += ' '+file
 
         return cmd
 
     def GetLinkCommand(self,mode):
         cmd = GetModeVar(self.options,mode,'linkCommand')
-        inputFilesPlaced = False
         inputFiles = self.GetObjectsPath(mode)
         outputFile = self.GetOutputPath(mode)
 
@@ -262,22 +268,15 @@ class Builder:
             if flag == '':
                 continue
 
-            if flag[:2]=='%%':
-                flag = flag[1:]
-            elif flag[0]=='%':
+            if flag[0]=='%':
                 if flag[1:] == 'output':
                     flag = outputFile
                 elif flag[1:] == 'input':
-                    inputFilesPlaced = True
                     flag = inputFiles
                 else:
-                    print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %output and %input")
-                    ErrorExit()
+                    flag = self.ResolveFlag(mode,flag)
             
             cmd += ' '+flag
-
-        if not inputFilesPlaced:
-            cmd += ' '+inputFiles
 
         return cmd
     
@@ -286,6 +285,7 @@ class Builder:
         return p.wait()
 
     def Scan(self,mode):
+        self.GetDepExtractFunc(mode)
         self.CollectAllCompilables(GetModeVar(self.options,mode,'sourceDir'),GetModeVar(self.options,mode,'sourceExtension'))
         self.InvertDependencies()
         self.GetRebuildSet(mode)
@@ -350,8 +350,40 @@ class Builder:
         self.InfoPrint(f"{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not found!")
         ErrorExit()
 
+    def GetCommands(self,mode,cmdList):
+        properCmds = []
+        for cmd in cmdList:
+            if type(cmd) == list:
+                builtCmd = ''
+                for flag in cmd:
+                    if flag[0]=='%':
+                        builtCmd += self.ResolveFlag(mode,flag)+' '
+                    else:
+                        builtCmd += flag+' '
+                builtCmd = builtCmd[:-1] #remove trailing space
+                properCmds.append(builtCmd)
+            elif type(cmd) == str:
+                properCmds.append(cmd)
+                
+        return properCmds
+
+    def GetPreCommands(self,mode):
+        cmds = GetModeVar(self.options,mode,'preCommands')
+        return self.GetCommands(mode,cmds)
+
+    def GetPostCommands(self,mode):
+        cmds = GetModeVar(self.options,mode,'postCommands')
+        return self.GetCommands(mode,cmds)
+
     def Done(self):
         self.InfoPrint(f'{TextColor(WHITE,1)}Done!{ResetTextColor()}')
+
+    def GetDepExtractFunc(self,mode):
+        if GetModeVar(self.options,mode,'headerExtension') in ['h','hh','hpp','h++']:
+            self.depExtractFunc = CPPDeps
+        else:
+            self.depExtractFunc = None
+
 
     def Build(self,mode):
         if mode=='':
@@ -362,10 +394,15 @@ class Builder:
                 self.ModeNotFoundError(mode)
             self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
 
-        if GetModeVar(self.options,mode,'headerExtension') in ['h','hh','hpp','h++']:
-            self.depExtractFunc = CPPDeps
-        else:
-            self.depExtractFunc = None
+        preCmds = self.GetPreCommands(mode)
+        postCmds = self.GetPostCommands(mode)
+        code = 0
+
+        for command in preCmds:
+            self.InfoPrint(f"{TextColor(MAGENTA)}{command}{ResetTextColor()}")
+            code = self.RunCommand(command)
+            if code!=0:
+                ErrorExit()
 
         self.Scan(mode)
 
@@ -399,6 +436,13 @@ class Builder:
 
             if code!=0:
                 self.InfoPrint(f"{TextColor(RED,1)}Linker error!{ResetTextColor()}")
+                ErrorExit()
+
+
+        for command in postCmds:
+            self.InfoPrint(f"{TextColor(MAGENTA)}{command}{ResetTextColor()}")
+            code = self.RunCommand(command)
+            if code!=0:
                 ErrorExit()
 
         self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
@@ -437,18 +481,16 @@ class Builder:
         elif mode not in self.options['modes']:
             self.ModeNotFoundError(mode)
 
-
         self.Scan(mode)
-        totalSize = GetFileSizes(self.depdict.keys())//1024
         fileCount = len(self.depdict)
         sourceCount = len(self.compileFiles)
+        totalSize = GetFileSizes(self.depdict.keys())//1024
 
         justSize = max(GetNumSize(totalSize),GetNumSize(fileCount),GetNumSize(sourceCount))+1
 
         self.InfoPrint(f"{TextColor(WHITE,1)}Project Stats:")
         self.InfoPrint(f"{TextColor(YELLOW)}File count:   {TextColor(CYAN,1)}{str(fileCount).rjust(justSize)}")
         self.InfoPrint(f"{TextColor(YELLOW)}Source count: {TextColor(CYAN,1)}{str(sourceCount).rjust(justSize)}\n")
-
         
         self.InfoPrint(f"{TextColor(YELLOW,1)}Code size:    {TextColor(GREEN,1)}{str(totalSize).rjust(justSize)}{TextColor(WHITE,1)}K{ResetTextColor()}")
 
@@ -595,7 +637,7 @@ def GetOptionsFromFile(file):
     defaults = [('compileCommand',''),('linkCommand',''),('outputName','a'),
             ('defaultMode',list(op['modes'].keys())[0]),('sourceExtension',''),
             ('headerExtension',''),('objectExtension','o'),('sourceDir','.'),
-            ('objectDir','.'),('outputDir','.')]
+            ('objectDir','.'),('outputDir','.'),('preCommands',[]),('postCommands',[])]
 
     SetDefaults(op,defaults)
     
@@ -688,4 +730,4 @@ def main():
 
 
 if __name__=='__main__':
-   main() 
+    main() 
