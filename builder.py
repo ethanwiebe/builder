@@ -94,9 +94,9 @@ def CPPDeps(path):
     return deps
 
 class Builder:
-    def __init__(self,options,extractFunc):
+    def __init__(self,options):
         self.options = options
-        self.depExtractFunc = extractFunc
+        self.depExtractFunc = None
         self.depdict = {}
         self.compileFiles = set()
         self.debug = False
@@ -127,7 +127,7 @@ class Builder:
         return False
 
     def FindFileDependencies(self,path):
-        if not os.path.exists(path):
+        if not os.path.exists(path) or not self.depExtractFunc:
             return
 
         deps = self.depExtractFunc(path)
@@ -155,10 +155,13 @@ class Builder:
             checkedHeadersSet = set()
 
         children = self.invdict[headerFile]
+        sourceExt = GetModeVar(self.options,mode,'sourceExtension')
+        headerExt = GetModeVar(self.options,mode,'headerExtension')
+
         for child in children:
-            if GetExtension(child)==GetModeVar(self.options,mode,'sourceExtension'):
+            if GetExtension(child)==sourceExt:
                 cascadeSet.add(child)
-            elif GetExtension(child)==GetModeVar(self.options,mode,'headerExtension'):
+            elif GetExtension(child)==headerExt:
                 if child not in checkedHeadersSet:
                     checkedHeadersSet.add(child)
                     cascadeSet = self.HeaderFileCascade(mode,child,cascadeSet,checkedHeadersSet)
@@ -180,7 +183,7 @@ class Builder:
         self.compileFiles = set()
         self.CollectCompilables(srcDir,srcExt)
         self.DebugPrint(f"Found {len(self.compileFiles)} source files.")
-        self.DebugPrint(f"Found {len(self.depdict)} total files.")
+        self.DebugPrint(f"Tracked {len(self.depdict)} total dependencies.")
 
     def GetRebuildSet(self,mode):
         self.rebuildSet = set()
@@ -360,6 +363,11 @@ class Builder:
             if mode not in self.options['modes']:
                 self.ModeNotFoundError(mode)
             self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
+
+        if GetModeVar(self.options,mode,'headerExtension') in ['h','hh','hpp','h++']:
+            self.depExtractFunc = CPPDeps
+        else:
+            self.depExtractFunc = None
 
         self.Scan(mode)
 
@@ -549,6 +557,11 @@ def TestDirs(options):
             if not os.path.exists(test):
                 print(f'{TextColor(YELLOW)}Creating {test}{ResetTextColor()}')
                 MakePath(test)
+
+def SetDefaults(op,defaults):
+    for opName,default in defaults:
+        if opName not in op:
+            op[opName] = default
     
 def GetOptionsFromFile(file):
     if not os.path.exists(f"./{file}"):
@@ -587,43 +600,14 @@ def GetOptionsFromFile(file):
 
     VerifyModesTypes(modes)
 
-    if 'compileCommand' not in op:
-        op['compileCommand'] = ''
+    defaults = [('compileCommand',''),('linkCommand',''),('outputName','a'),
+            ('defaultMode',list(op['modes'].keys())[0]),('sourceExtension',''),
+            ('headerExtension',''),('objectExtension','o'),('sourceDir','.'),
+            ('objectDir','.'),('outputDir','.')]
+
+    SetDefaults(op,defaults)
     
-    if 'linkCommand' not in op:
-        op['linkCommand'] = ''
-
-    if 'outputName' not in op:
-        op['outputName'] = 'a'
-
-    if 'defaultMode' not in op:
-        op['defaultMode'] = list(op['modes'].keys())[0]
-
-    if 'sourceExtension' not in op:
-        op['sourceExtension'] = 'cpp'
-
-    if 'headerExtension' not in op:
-        op['headerExtension'] = 'h'
-
-    if 'objectExtension' not in op:
-        op['objectExtension'] = 'o'
-
-    if not VarNeverNull(op,'sourceDir'):
-        for mode in GetUndefinedModes(op,'sourceDir'):
-            print(f'{TextColor(RED,1)}Option "sourceDir" is unspecified in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
-
-        print(f'{TextColor(RED,1)}Builder file must specify "sourceDir"!')
-        error = True
-    
-
-    if 'objectDir' not in op:
-        op['objectDir'] = '.'
-
-    if 'outputDir' not in op:
-        op['outputDir'] = '.'
-
     FixDirs(op)
-
     TestDirs(op)
 
     if not VarNeverNull(op,'compileFlags'):
@@ -684,7 +668,7 @@ def main():
 
     builderFile = args.b
     options = GetOptionsFromFile(builderFile)
-    b = Builder(options,CPPDeps)
+    b = Builder(options)
 
     if args.verbose:
         b.debug = True
