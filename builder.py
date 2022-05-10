@@ -242,8 +242,7 @@ class Builder:
                     flag = file
                 else:
                     print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %output and %input")
-                    print(ExitingMsg())
-                    quit()
+                    ErrorExit()
             
             cmd += ' '+flag
 
@@ -273,8 +272,7 @@ class Builder:
                     flag = inputFiles
                 else:
                     print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %output and %input")
-                    print(ExitingMsg())
-                    quit()
+                    ErrorExit()
             
             cmd += ' '+flag
 
@@ -321,7 +319,8 @@ class Builder:
 
     def CommandFailedQuit(self):
         if self.HasCommandFailed():
-            self.ThreadedPrint(f"{TextColor(RED,1)}Not all files were successfully compiled!\n{ExitingMsg()}")
+            self.ThreadedPrint(f"{TextColor(RED,1)}Not all files were successfully compiled!")
+            ErrorExit()
             quit()
 
 
@@ -349,8 +348,7 @@ class Builder:
 
     def ModeNotFoundError(self,mode):
         self.InfoPrint(f"{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not found!")
-        self.InfoPrint(ExitingMsg())
-        quit()
+        ErrorExit()
 
     def Done(self):
         self.InfoPrint(f'{TextColor(WHITE,1)}Done!{ResetTextColor()}')
@@ -384,8 +382,7 @@ class Builder:
             self.DispatchCommands(cmdList,compileCount)
             if errored:
                 self.InfoPrint(f"{TextColor(RED,1)}Not all files were successfully compiled!{ResetTextColor()}")
-                self.InfoPrint(f"{ExitingMsg()}")
-                return
+                ErrorExit()
 
         # linking
         if GetModeVar(self.options,mode,'linkCommand')!='':
@@ -402,14 +399,14 @@ class Builder:
 
             if code!=0:
                 self.InfoPrint(f"{TextColor(RED,1)}Linker error!{ResetTextColor()}")
+                ErrorExit()
 
         self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
     
     def Clean(self,mode):
         if mode not in self.options['modes']:
             self.InfoPrint(f"{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} not found!")
-            self.InfoPrint(ExitingMsg())
-            quit()
+            ErrorExit()
             
         self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
         self.InfoPrint(f"{TextColor(WHITE,1)}Cleaning up...{TextColor(YELLOW)}")
@@ -433,8 +430,6 @@ class Builder:
             self.RunCommand(cmd)
 
         self.Done()
-
-    
 
     def Stats(self,mode):
         if mode=='':
@@ -460,6 +455,10 @@ class Builder:
 
 def ExitingMsg():
     return f"{TextColor(RED,1)}Exiting...{ResetTextColor()}"
+
+def ErrorExit():
+    print(ExitingMsg())
+    quit(1)
 
 def GetModeCompileFlags(options,mode):
     flags = []
@@ -520,8 +519,7 @@ def VerifyModesTypes(modes):
     for mode in modes:
         if type(modes[mode])!=dict:
             print(f'{TextColor(RED,1)}Mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} must be of type dict!')
-            print(ExitingMsg())
-            quit()
+            ErrorExit()
         
         error = False
         for key in modes[mode]:
@@ -531,8 +529,7 @@ def VerifyModesTypes(modes):
                 error = True
 
         if error:
-            print(ExitingMsg())
-            quit()
+            ErrorExit()
 
 def FixDirs(options):
     dirs = ['sourceDir','objectDir','outputDir']
@@ -566,8 +563,7 @@ def SetDefaults(op,defaults):
 def GetOptionsFromFile(file):
     if not os.path.exists(f"./{file}"):
         print(f"{TextColor(RED,1)}No {file} file found!{ResetTextColor()}")
-        print(ExitingMsg())
-        quit()
+        ErrorExit()
 
     s = ''
     with open(file,'r') as f:
@@ -578,23 +574,19 @@ def GetOptionsFromFile(file):
     except json.decoder.JSONDecodeError as e:
         print(f'{TextColor(RED,1)}JSON Decode Error ({file}):')
         print('\t'+str(e))
-        print(ExitingMsg())
-        quit()
+        ErrorExit()
 
     error = False
 
     if 'modes' not in op:
         print(f'{TextColor(RED,1)}Builder file must specify "modes"!')
-        print(ExitingMsg())
-        quit()
+        ErrorExit()
     elif type(op['modes'])!=dict:
         print(f'{TextColor(RED,1)}Expected "modes" to be of type dict!')
-        print(ExitingMsg())
-        quit()
+        ErrorExit()
     elif len(op['modes'])==0:
         print(f'{TextColor(RED,1)}Builder file must specify at least one mode in "modes"!')
-        print(ExitingMsg())
-        quit()
+        ErrorExit()
 
     modes = op['modes']
 
@@ -625,8 +617,7 @@ def GetOptionsFromFile(file):
                 error = True
 
     if error:
-        print(ExitingMsg())
-        quit()
+        ErrorExit()
 
     return op
 
