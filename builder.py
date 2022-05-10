@@ -587,27 +587,14 @@ def GetOptionsFromFile(file):
 
     VerifyModesTypes(modes)
 
-    if not VarNeverNull(op,'compileCommand'):
-        for mode in GetUndefinedModes(op,'compileCommand'):
-            print(f'{TextColor(RED,1)}Option "compileCommand" is unspecified in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
-        print(f'{TextColor(RED,1)}Builder file must specify "compileCommand"!')
-        error = True
-
     if 'compileCommand' not in op:
         op['compileCommand'] = ''
     
-    if not VarNeverNull(op,'linkCommand'):
-        for mode in GetUndefinedModes(op,'linkCommand'):
-            print(f'{TextColor(RED,1)}Option "linkCommand" is unspecified in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
-        print(f'{TextColor(RED,1)}Builder file must specify "linkCommand"!')
-        error = True
-
     if 'linkCommand' not in op:
         op['linkCommand'] = ''
 
     if 'outputName' not in op:
         op['outputName'] = 'a'
-
 
     if 'defaultMode' not in op:
         op['defaultMode'] = list(op['modes'].keys())[0]
