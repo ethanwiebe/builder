@@ -80,7 +80,6 @@ def CPPExtractIncludeFile(line):
 
 def CPPDeps(path):
     deps = set()
-
     prefix,filename = GetPrefixAndName(path)
 
     with open(prefix+filename,'r') as f:
@@ -96,6 +95,8 @@ def CPPDeps(path):
 class Builder:
     def __init__(self,options):
         self.options = options
+        self.TestDirs()
+        
         self.depExtractFunc = None
         self.depdict = {}
         self.compileFiles = set()
@@ -119,7 +120,8 @@ class Builder:
             self.InfoPrint(msg)
 
     def DirContainsObjects(self,mode):
-        l = os.listdir(GetModeVar(self.options,mode,'objectDir'))
+        d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
+        l = os.listdir(d)
         for f in l:
             if GetExtension(f)==GetModeVar(self.options,mode,'objectExtension'):
                 return True
@@ -215,28 +217,71 @@ class Builder:
         SortByFileTimesIP(self.rebuildList)
 
     def GetObjectsPath(self,mode):
-        return os.path.join(GetModeVar(self.options,mode,'objectDir'),SetExtension('*',GetModeVar(self.options,mode,'objectExtension')))
+        d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
+        return os.path.join(d,SetExtension('*',GetModeVar(self.options,mode,'objectExtension')))
 
     def GetObjectFromSource(self,mode,src):
-        return os.path.join(GetModeVar(self.options,mode,'objectDir'),SetExtension(os.path.basename(src),GetModeVar(self.options,mode,'objectExtension')))
+        d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
+        return os.path.join(d,SetExtension(os.path.basename(src),GetModeVar(self.options,mode,'objectExtension')))
 
     def GetOutputPath(self,mode):
-        return os.path.join(GetModeVar(self.options,mode,'outputDir'),GetModeVar(self.options,mode,'outputName'))
+        d = self.ResolvePath(mode,GetModeVar(self.options,mode,'outputDir'))
+        return os.path.join(d,GetModeVar(self.options,mode,'outputName'))
 
     def GetBuilderPath(self):
         return os.path.abspath(__file__)
+        
+    def TestDirs(self):
+        dirs = ['sourceDir','objectDir','outputDir']
+    
+        for d in dirs:
+            modes = self.options['modes']
+            for mode in modes:
+                if d=='outputDir' and GetModeVar(self.options,mode,'linkCommand')=='':
+                	continue
+                if d=='objectDir' and GetModeVar(self.options,mode,'compileCommand')=='':
+                	continue
+                
+                test = self.ResolvePath(mode,GetModeVar(self.options,mode,d))
+                if not os.path.exists(test):
+                    print(f'{TextColor(YELLOW)}Creating {test}{ResetTextColor()}')
+                    MakePath(test)
 
     def ResolveFlag(self,mode,flag):
-        if flag[:2]=='%%': return flag[1:]
+        if flag[:2]=='%%': return flag[1:] # escaped flag name
         if flag=='%mode':
             return mode
         if flag=='%self':
             return self.GetBuilderPath()
         if flag=='%time':
             return str(int(time.time()))
+        
+        var = GetModeVar(self.options,mode,flag[1:])
+        if var:
+        	if 'Dir' in flag:
+        		return self.ResolvePath(mode,var)
+        
+        	return str(var)
 
-        print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %output, %input, %mode, %self, %time")
+        print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %out, %in, %mode, %self, %time, and config options")
         ErrorExit()
+       
+    def ResolvePath(self,mode,pathList):
+        if type(pathList)==str:
+            return pathList
+    
+        s = ''
+        for d in pathList:
+            if d[0]=='%':
+                s += self.ResolveFlag(mode,d)
+            else:
+                s += d
+            s += '/'
+        
+        if not s:
+            s = '.'
+	
+        return s
 
     def GetCompileCommand(self,mode,file):
         cmd = GetModeVar(self.options,mode,'compileCommand')
@@ -247,9 +292,9 @@ class Builder:
                 continue
 
             if flag[0]=='%':
-                if flag[1:] == 'output':
+                if flag[1:] == 'out':
                     flag = objVersion
-                elif flag[1:] == 'input':
+                elif flag[1:] == 'in':
                     flag = file
                 else:
                     flag = self.ResolveFlag(mode,flag)
@@ -269,9 +314,9 @@ class Builder:
                 continue
 
             if flag[0]=='%':
-                if flag[1:] == 'output':
+                if flag[1:] == 'out':
                     flag = outputFile
-                elif flag[1:] == 'input':
+                elif flag[1:] == 'in':
                     flag = inputFiles
                 else:
                     flag = self.ResolveFlag(mode,flag)
@@ -286,7 +331,8 @@ class Builder:
 
     def Scan(self,mode):
         self.GetDepExtractFunc(mode)
-        self.CollectAllCompilables(GetModeVar(self.options,mode,'sourceDir'),GetModeVar(self.options,mode,'sourceExtension'))
+        srcDir = self.ResolvePath(mode,GetModeVar(self.options,mode,'sourceDir'))
+        self.CollectAllCompilables(srcDir,GetModeVar(self.options,mode,'sourceExtension'))
         self.InvertDependencies()
         self.GetRebuildSet(mode)
 
@@ -296,6 +342,7 @@ class Builder:
         i = 1
 
         for src,obj,cmd,index in l:
+            self.CommandFailedQuit()
             if self.debug:
                 self.ThreadedPrint(f"{TextColor(BLUE)}{cmd}{ResetTextColor()}")
             else:
@@ -322,7 +369,6 @@ class Builder:
             self.ThreadedPrint(f"{TextColor(RED,1)}Not all files were successfully compiled!")
             ErrorExit()
             quit()
-
 
     def DispatchCommands(self,cmdList,totalCount):
         cores = os.cpu_count()
@@ -586,17 +632,6 @@ def FixDirs(options):
             if options[d]=='':
                 options[d] = '.'
 
-def TestDirs(options):
-    dirs = ['sourceDir','objectDir','outputDir']
-
-    for d in dirs:
-        modes = options['modes']
-        for mode in modes:
-            test = GetModeVar(options,mode,d)
-            if not os.path.exists(test):
-                print(f'{TextColor(YELLOW)}Creating {test}{ResetTextColor()}')
-                MakePath(test)
-
 def SetDefaults(op,defaults):
     for opName,default in defaults:
         if opName not in op:
@@ -642,7 +677,6 @@ def GetOptionsFromFile(file):
     SetDefaults(op,defaults)
     
     FixDirs(op)
-    TestDirs(op)
 
     if not VarNeverNull(op,'compileFlags'):
         for mode in GetUndefinedModes(op,'compileFlags'):
