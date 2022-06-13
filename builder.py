@@ -65,6 +65,9 @@ def GetExtension(filename):
 def SetExtension(filename,ext):
     return os.path.splitext(filename)[0]+'.'+ext
 
+def AddExtension(filename,ext):
+    return filename+'.'+ext
+
 def GetPrefixAndName(path):
     if '/' in path:
         endLoc = path.rfind('/')
@@ -121,6 +124,9 @@ class Builder:
 
     def DirContainsObjects(self,mode):
         d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
+        if not os.path.exists(d):
+            return False
+            
         l = os.listdir(d)
         for f in l:
             if GetExtension(f)==GetModeVar(self.options,mode,'objectExtension'):
@@ -222,7 +228,7 @@ class Builder:
 
     def GetObjectFromSource(self,mode,src):
         d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
-        return os.path.join(d,SetExtension(os.path.basename(src),GetModeVar(self.options,mode,'objectExtension')))
+        return os.path.join(d,AddExtension(os.path.basename(src),GetModeVar(self.options,mode,'objectExtension')))
 
     def GetOutputPath(self,mode):
         d = self.ResolvePath(mode,GetModeVar(self.options,mode,'outputDir'))
@@ -342,7 +348,9 @@ class Builder:
         i = 1
 
         for src,obj,cmd,index in l:
-            self.CommandFailedQuit()
+            if self.HasCommandFailed():
+                quit()
+                
             if self.debug:
                 self.ThreadedPrint(f"{TextColor(BLUE)}{cmd}{ResetTextColor()}")
             else:
@@ -382,12 +390,14 @@ class Builder:
         
         try:
             while threading.active_count()!=1:
-                self.CommandFailedQuit()
+                if self.HasCommandFailed():
+                    quit()
                 time.sleep(0.2)
         except KeyboardInterrupt:
             self.SetCommandFailed()
 
-        self.CommandFailedQuit()
+        if self.HasCommandFailed():
+            self.CommandFailedQuit()
 
     def GetDefaultMode(self):
         return self.options['defaultMode']
@@ -478,7 +488,10 @@ class Builder:
                 src = self.GetObjectsPath(mode)
                 dest = self.GetOutputPath(mode)
                 self.InfoPrint(f'{TextColor(GREEN)}Linking: {TextColor(BLUE)}{src} {TextColor(WHITE,1)}-> {TextColor(GREEN,1)}{dest}{ResetTextColor()}')
-            code = self.RunCommand(cmd)
+            try:
+                code = self.RunCommand(cmd)
+            except KeyboardInterrupt:
+                code = 1
 
             if code!=0:
                 self.InfoPrint(f"{TextColor(RED,1)}Linker error!{ResetTextColor()}")
