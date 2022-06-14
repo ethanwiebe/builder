@@ -259,8 +259,10 @@ class Builder:
             return mode
         if flag=='%self':
             return self.GetBuilderPath()
-        if flag=='%time':
+        if flag=='%utime':
             return str(int(time.time()))
+        if flag=='%platform':
+            return sys.platform.upper()
         
         var = GetModeVar(self.options,mode,flag[1:])
         if var:
@@ -271,20 +273,29 @@ class Builder:
                 
             return str(var)
 
-        print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %out, %in, %mode, %self, %time, and config options")
+        print(f"{TextColor(RED,1)}Unexpected special flag '{flag}'!")
         ErrorExit()
        
     def ResolvePath(self,mode,pathList):
         if type(pathList)==str:
-            return pathList
+            return pathList # pathList is already a string
     
         s = ''
+        concat = False
         for d in pathList:
+            concat = False
+            
+            if d[0]=='#' or d[:2]=='\\#':
+                concat = d[0]=='#'
+                d = d[1:]
+                
             if d[0]=='%' or d[:2]=='\\%':
-                s += self.ResolveFlag(mode,d)
-            else:
-                s += d
-            s += '/'
+                d = self.ResolveFlag(mode,d)
+            
+            if concat and s!='/':
+                s = s[:-1] # remove trailing /
+                
+            s += d + '/'
         
         if not s:
             s = '.'
@@ -293,10 +304,16 @@ class Builder:
     
     def GetCommandFlags(self,mode,flags,infile,outfile):
         cmd = ''
+        concat = False
         for flag in flags:
+            concat = False
             if flag == '':
                 continue
 
+            if flag[0] == '#' or flag[:2] == '\\#':
+                concat = flag[0]=='#'
+                flag = flag[1:]
+				
             if flag[0] == '%' or flag[:2] == '\\%':
                 if flag[1:] == 'out':
                     flag = outfile
@@ -305,7 +322,10 @@ class Builder:
                 else:
                     flag = self.ResolveFlag(mode,flag)
             
-            cmd += ' '+flag
+            if not concat:
+                cmd += ' '
+            
+            cmd += flag
             
         return cmd[1:]
 
@@ -408,11 +428,21 @@ class Builder:
         for cmd in cmdList:
             if type(cmd) == list:
                 builtCmd = ''
+                concat = False
                 for flag in cmd:
+                    concat = False
+                    if flag[0]=='#' or flag[:2]=='\\#':
+                        concat = flag[0]=='#'
+                        flag = flag[1:]
+                        
                     if flag[0]=='%' or flag[:2]=='\\%':
-                        builtCmd += self.ResolveFlag(mode,flag)+' '
-                    else:
-                        builtCmd += flag+' '
+                        flag = self.ResolveFlag(mode,flag)
+                    
+                    if concat:
+                        builtCmd = builtCmd[:-1] #remove trailing space
+                        
+                    builtCmd += flag+' '
+                    
                 builtCmd = builtCmd[:-1] #remove trailing space
                 properCmds.append(builtCmd)
             elif type(cmd) == str:
