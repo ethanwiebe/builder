@@ -254,7 +254,7 @@ class Builder:
                     MakePath(test)
 
     def ResolveFlag(self,mode,flag):
-        if flag[:2]=='%%': return flag[1:] # escaped flag name
+        if flag[:2]=='\\%': return flag[1:] # escaped flag name
         if flag=='%mode':
             return mode
         if flag=='%self':
@@ -264,10 +264,12 @@ class Builder:
         
         var = GetModeVar(self.options,mode,flag[1:])
         if var:
-        	if 'Dir' in flag:
-        		return self.ResolvePath(mode,var)
-        
-        	return str(var)
+            if 'Dir' in flag:
+                return self.ResolvePath(mode,var)
+            if 'Flags' in flag:
+                return self.GetCommandFlags(mode,var,'%in','%out')
+                
+            return str(var)
 
         print(f"{TextColor(RED,1)}Unexpected special flag {flag}, valid options are %out, %in, %mode, %self, %time, and config options")
         ErrorExit()
@@ -278,7 +280,7 @@ class Builder:
     
         s = ''
         for d in pathList:
-            if d[0]=='%':
+            if d[0]=='%' or d[:2]=='\\%':
                 s += self.ResolveFlag(mode,d)
             else:
                 s += d
@@ -288,24 +290,31 @@ class Builder:
             s = '.'
 	
         return s
+    
+    def GetCommandFlags(self,mode,flags,infile,outfile):
+        cmd = ''
+        for flag in flags:
+            if flag == '':
+                continue
+
+            if flag[0] == '%' or flag[:2] == '\\%':
+                if flag[1:] == 'out':
+                    flag = outfile
+                elif flag[1:] == 'in':
+                    flag = infile
+                else:
+                    flag = self.ResolveFlag(mode,flag)
+            
+            cmd += ' '+flag
+            
+        return cmd[1:]
 
     def GetCompileCommand(self,mode,file):
         cmd = GetModeVar(self.options,mode,'compileCommand')
         objVersion = self.GetObjectFromSource(mode,file)
         compileFlags = GetModeCompileFlags(self.options,mode)
-        for flag in compileFlags:
-            if flag == '':
-                continue
-
-            if flag[0]=='%':
-                if flag[1:] == 'out':
-                    flag = objVersion
-                elif flag[1:] == 'in':
-                    flag = file
-                else:
-                    flag = self.ResolveFlag(mode,flag)
-            
-            cmd += ' '+flag
+        
+        cmd += ' '+self.GetCommandFlags(mode,compileFlags,file,objVersion)
 
         return cmd
 
@@ -313,22 +322,10 @@ class Builder:
         cmd = GetModeVar(self.options,mode,'linkCommand')
         inputFiles = self.GetObjectsPath(mode)
         outputFile = self.GetOutputPath(mode)
-
         linkFlags = GetModeLinkFlags(self.options,mode)
-        for flag in linkFlags: 
-            if flag == '':
-                continue
-
-            if flag[0]=='%':
-                if flag[1:] == 'out':
-                    flag = outputFile
-                elif flag[1:] == 'in':
-                    flag = inputFiles
-                else:
-                    flag = self.ResolveFlag(mode,flag)
-            
-            cmd += ' '+flag
-
+        
+        cmd += ' '+self.GetCommandFlags(mode,linkFlags,inputFiles,outputFile)
+		
         return cmd
     
     def RunCommand(self,cmd):
@@ -412,7 +409,7 @@ class Builder:
             if type(cmd) == list:
                 builtCmd = ''
                 for flag in cmd:
-                    if flag[0]=='%':
+                    if flag[0]=='%' or flag[:2]=='\\%':
                         builtCmd += self.ResolveFlag(mode,flag)+' '
                     else:
                         builtCmd += flag+' '
