@@ -327,14 +327,17 @@ class Builder:
             
             cmd += flag
             
-        return cmd[1:]
+        return cmd.lstrip()
 
     def GetCompileCommand(self,mode,file):
         cmd = GetModeVar(self.options,mode,'compileCmd')
-        objVersion = self.GetObjectFromSource(mode,file)
         compileFlags = GetModeCompileFlags(self.options,mode)
-        
-        cmd += ' '+self.GetCommandFlags(mode,compileFlags,file,objVersion)
+        objVersion = self.GetObjectFromSource(mode,file)
+        if type(cmd)==list:
+            compileFlags = cmd + compileFlags
+            cmd = self.GetCommandFlags(mode,compileFlags,file,objVersion)
+        else:
+            cmd += ' '+self.GetCommandFlags(mode,compileFlags,file,objVersion)
 
         return cmd
 
@@ -343,8 +346,11 @@ class Builder:
         inputFiles = self.GetObjectsPath(mode)
         outputFile = self.GetOutputPath(mode)
         linkFlags = GetModeLinkFlags(self.options,mode)
-        
-        cmd += ' '+self.GetCommandFlags(mode,linkFlags,inputFiles,outputFile)
+        if type(cmd)==list:
+            linkFlags = cmd + linkFlags
+            cmd = self.GetCommandFlags(mode,linkFlags,inputFiles,outputFile)
+        else:
+            cmd += ' '+self.GetCommandFlags(mode,linkFlags,inputFiles,outputFile)
 		
         return cmd
     
