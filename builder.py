@@ -129,7 +129,7 @@ class Builder:
             
         l = os.listdir(d)
         for f in l:
-            if GetExtension(f)==GetModeVar(self.options,mode,'objectExtension'):
+            if GetExtension(f)==GetModeVar(self.options,mode,'objectExt'):
                 return True
 
         return False
@@ -163,8 +163,8 @@ class Builder:
             checkedHeadersSet = set()
 
         children = self.invdict[headerFile]
-        sourceExt = GetModeVar(self.options,mode,'sourceExtension')
-        headerExt = GetModeVar(self.options,mode,'headerExtension')
+        sourceExt = GetModeVar(self.options,mode,'sourceExt')
+        headerExt = GetModeVar(self.options,mode,'headerExt')
 
         for child in children:
             if GetExtension(child)==sourceExt:
@@ -224,11 +224,11 @@ class Builder:
 
     def GetObjectsPath(self,mode):
         d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
-        return os.path.join(d,SetExtension('*',GetModeVar(self.options,mode,'objectExtension')))
+        return os.path.join(d,SetExtension('*',GetModeVar(self.options,mode,'objectExt')))
 
     def GetObjectFromSource(self,mode,src):
         d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
-        return os.path.join(d,AddExtension(os.path.basename(src),GetModeVar(self.options,mode,'objectExtension')))
+        return os.path.join(d,AddExtension(os.path.basename(src),GetModeVar(self.options,mode,'objectExt')))
 
     def GetOutputPath(self,mode):
         d = self.ResolvePath(mode,GetModeVar(self.options,mode,'outputDir'))
@@ -243,9 +243,9 @@ class Builder:
         for d in dirs:
             modes = self.options['modes']
             for mode in modes:
-                if d=='outputDir' and GetModeVar(self.options,mode,'linkCommand')=='':
+                if d=='outputDir' and GetModeVar(self.options,mode,'linkCmd')=='':
                 	continue
-                if d=='objectDir' and GetModeVar(self.options,mode,'compileCommand')=='':
+                if d=='objectDir' and GetModeVar(self.options,mode,'compileCmd')=='':
                 	continue
                 
                 test = self.ResolvePath(mode,GetModeVar(self.options,mode,d))
@@ -268,7 +268,7 @@ class Builder:
         if var:
             if 'Dir' in flag:
                 return self.ResolvePath(mode,var)
-            if 'Flags' in flag:
+            if type(var)==list:
                 return self.GetCommandFlags(mode,var,'%in','%out')
                 
             return str(var)
@@ -330,7 +330,7 @@ class Builder:
         return cmd[1:]
 
     def GetCompileCommand(self,mode,file):
-        cmd = GetModeVar(self.options,mode,'compileCommand')
+        cmd = GetModeVar(self.options,mode,'compileCmd')
         objVersion = self.GetObjectFromSource(mode,file)
         compileFlags = GetModeCompileFlags(self.options,mode)
         
@@ -339,7 +339,7 @@ class Builder:
         return cmd
 
     def GetLinkCommand(self,mode):
-        cmd = GetModeVar(self.options,mode,'linkCommand')
+        cmd = GetModeVar(self.options,mode,'linkCmd')
         inputFiles = self.GetObjectsPath(mode)
         outputFile = self.GetOutputPath(mode)
         linkFlags = GetModeLinkFlags(self.options,mode)
@@ -355,7 +355,7 @@ class Builder:
     def Scan(self,mode):
         self.GetDepExtractFunc(mode)
         srcDir = self.ResolvePath(mode,GetModeVar(self.options,mode,'sourceDir'))
-        self.CollectAllCompilables(srcDir,GetModeVar(self.options,mode,'sourceExtension'))
+        self.CollectAllCompilables(srcDir,GetModeVar(self.options,mode,'sourceExt'))
         self.InvertDependencies()
         self.GetRebuildSet(mode)
 
@@ -451,18 +451,18 @@ class Builder:
         return properCmds
 
     def GetPreCommands(self,mode):
-        cmds = GetModeVar(self.options,mode,'preCommands')
+        cmds = GetModeVar(self.options,mode,'preCmds')
         return self.GetCommands(mode,cmds)
 
     def GetPostCommands(self,mode):
-        cmds = GetModeVar(self.options,mode,'postCommands')
+        cmds = GetModeVar(self.options,mode,'postCmds')
         return self.GetCommands(mode,cmds)
 
     def Done(self):
         self.InfoPrint(f'{TextColor(WHITE,1)}Done!{ResetTextColor()}')
 
     def GetDepExtractFunc(self,mode):
-        if GetModeVar(self.options,mode,'headerExtension') in ['h','hh','hpp','h++']:
+        if GetModeVar(self.options,mode,'headerExt') in ['h','hh','hpp','h++']:
             self.depExtractFunc = CPPDeps
         else:
             self.depExtractFunc = None
@@ -482,7 +482,7 @@ class Builder:
         code = 0
 
         for command in preCmds:
-            self.InfoPrint(f"{TextColor(MAGENTA)}{command}{ResetTextColor()}")
+            self.DebugPrint(f"{TextColor(MAGENTA)}{command}{ResetTextColor()}")
             code = self.RunCommand(command)
             if code!=0:
                 ErrorExit()
@@ -494,7 +494,7 @@ class Builder:
 
         compileCount = len(self.rebuildList)
         # compilation
-        if compileCount!=0 and GetModeVar(self.options,mode,'compileCommand')!='':
+        if compileCount!=0 and GetModeVar(self.options,mode,'compileCmd')!='':
             self.InfoPrint(f'{TextColor(WHITE,1)}Building {TextColor(CYAN,1)}{compileCount}{TextColor(WHITE,1)} files...')
             
             cmdList = [(file,self.GetObjectFromSource(mode,file),self.GetCompileCommand(mode,file),i) for i,file in enumerate(self.rebuildList)]
@@ -505,7 +505,7 @@ class Builder:
                 ErrorExit()
 
         # linking
-        if GetModeVar(self.options,mode,'linkCommand')!='':
+        if GetModeVar(self.options,mode,'linkCmd')!='':
             self.InfoPrint(f'{TextColor(WHITE,1)}Linking executable...{ResetTextColor()}')
 
             cmd = self.GetLinkCommand(mode)
@@ -709,10 +709,10 @@ def GetOptionsFromFile(file):
 
     VerifyModesTypes(modes)
 
-    defaults = [('compileCommand',''),('linkCommand',''),('outputName','a'),
-            ('defaultMode',list(op['modes'].keys())[0]),('sourceExtension',''),
-            ('headerExtension',''),('objectExtension','o'),('sourceDir','.'),
-            ('objectDir','.'),('outputDir','.'),('preCommands',[]),('postCommands',[])]
+    defaults = [('compileCmd',''),('linkCmd',''),('outputName','a'),
+            ('defaultMode',list(op['modes'].keys())[0]),('sourceExt',''),
+            ('headerExt',''),('objectExt','o'),('sourceDir','.'),
+            ('objectDir','.'),('outputDir','.'),('preCmds',[]),('postCmds',[])]
 
     SetDefaults(op,defaults)
     
@@ -720,16 +720,16 @@ def GetOptionsFromFile(file):
 
     if not VarNeverNull(op,'compileFlags'):
         for mode in GetUndefinedModes(op,'compileFlags'):
-            if GetModeVar(op,mode,'compileCommand')!='':
-                # if compileCommand is specified for this mode it needs to have a list of compileFlags
-                print(f'{TextColor(RED,1)}Option "compileFlags" is unspecified while "compileCommand" is non-empty in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
+            if GetModeVar(op,mode,'compileCmd')!='':
+                # if compileCmd is specified for this mode it needs to have a list of compileFlags
+                print(f'{TextColor(RED,1)}Option "compileFlags" is unspecified while "compileCmd" is non-empty in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
                 error = True
 
     if not VarNeverNull(op,'linkFlags'):
         for mode in GetUndefinedModes(op,'linkFlags'):
-            if GetModeVar(op,mode,'linkCommand')!='':
-                # if linkCommand is specified for this mode it needs to have a list of linkFlags
-                print(f'{TextColor(RED,1)}Option "linkFlags" is unspecified while "linkCommand" is non-empty in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
+            if GetModeVar(op,mode,'linkCmd')!='':
+                # if linkCmd is specified for this mode it needs to have a list of linkFlags
+                print(f'{TextColor(RED,1)}Option "linkFlags" is unspecified while "linkCmd" is non-empty in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)}!')
                 error = True
 
     if error:
@@ -804,4 +804,4 @@ def main():
 
 
 if __name__=='__main__':
-    main() 
+    main()
