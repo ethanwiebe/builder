@@ -741,20 +741,22 @@ def GetOptionsFromFile(file):
 def main():    
     global noColor
     name = 'builder'
-    builderVersion = '0.0.1'
+    builderVersion = '0.0.2'
 
     parser = argparse.ArgumentParser(prog='builder',description="Only builds what needs to be built.")
     group = parser.add_mutually_exclusive_group()
-    parser.add_argument("mode",default='',help="specify the set of flags to use",nargs='?')
+    parser.add_argument("mode",default='',help="specify the build modes to run",nargs='*')
     parser.add_argument("-b",metavar='FILE',default='builder.json',help="specify name of builder file to use (default builder.json)")
-    parser.add_argument("-c","--clean",help="remove all object files and output",action="store_true")
+    parser.add_argument("-c","--clean",help="remove all object and output files",action="store_true")
     group.add_argument("-v","--verbose",help="print more info for debugging",action="store_true")
-    group.add_argument('-q','--quiet',help='silence all output (from this program)',action='store_true')
-    parser.add_argument("--stats",action="store_true",help="print stats about project")
-    parser.add_argument("--log",metavar="FILE",default="",help="write all output to the specified log file")
+    group.add_argument('-q','--quiet',help='silence builder output',action='store_true')
+    parser.add_argument("--stats",action="store_true",help="print stats about the project")
+    parser.add_argument("--log",metavar="FILE",default="",help="write output to the specified log file")
     parser.add_argument("--nocolor",help="disables output of color escape sequences",action="store_true")
     parser.add_argument("--version",action="store_true",help='show program\'s version number and exit')
     args = parser.parse_args()
+    if args.mode=='':
+        args.mode = ['']
 
     if args.nocolor or not sys.stdout.isatty():
         noColor = True
@@ -784,21 +786,23 @@ def main():
         b.quiet = True
 
     if args.stats:
-        b.Stats(args.mode)
+        b.Stats(args.mode[0])
         quit()
 
     if args.clean:
-        if args.mode=='' or args.mode=='all':
+        if args.mode[0]=='' or args.mode[0]=='all':
             for mode in options['modes']:
                 b.Clean(mode)
         else:
-            b.Clean(args.mode)
+            for mode in args.mode:
+                b.Clean(mode)
     else:
-        if args.mode=='all':
+        if args.mode[0]=='all':
             for mode in options['modes']:
                 b.Build(mode)
         else:
-            b.Build(args.mode)
+            for mode in args.mode:
+                b.Build(mode)
 
     print(ResetTextColor(),end='')
 
