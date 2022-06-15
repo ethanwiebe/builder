@@ -69,8 +69,8 @@ def AddExtension(filename,ext):
     return filename+'.'+ext
 
 def GetPrefixAndName(path):
-    if '/' in path:
-        endLoc = path.rfind('/')
+    if os.path.sep in path:
+        endLoc = path.rfind(os.path.sep)
         prefix = path[:endLoc+1]
         filename = path[endLoc+1:]
     
@@ -292,10 +292,10 @@ class Builder:
             if d[0]=='%' or d[:2]=='\\%':
                 d = self.ResolveFlag(mode,d)
             
-            if concat and s!='/':
+            if concat and s!=os.path.sep:
                 s = s[:-1] # remove trailing /
                 
-            s += d + '/'
+            s += d + os.path.sep
         
         if not s:
             s = '.'
@@ -684,7 +684,7 @@ def SetDefaults(op,defaults):
             op[opName] = default
     
 def GetOptionsFromFile(file):
-    if not os.path.exists(f"./{file}"):
+    if not os.path.exists(f".{os.path.sep}{file}"):
         print(f"{TextColor(RED,1)}No {file} file found!{ResetTextColor()}")
         ErrorExit()
 
