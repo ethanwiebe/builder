@@ -103,6 +103,7 @@ class Builder:
         self.depExtractFunc = None
         self.depdict = {}
         self.compileFiles = set()
+        self.rebuildList = []
         self.debug = False
         self.quiet = False
 
@@ -265,7 +266,7 @@ class Builder:
             return sys.platform.upper()
         
         var = GetModeVar(self.options,mode,flag[1:])
-        if var:
+        if var!=None:
             if 'Dir' in flag:
                 return self.ResolvePath(mode,var)
             if type(var)==list:
@@ -285,6 +286,9 @@ class Builder:
         for d in pathList:
             concat = False
             
+            if d=='':
+                continue
+            
             if d[0]=='#' or d[:2]=='\\#':
                 concat = d[0]=='#'
                 d = d[1:]
@@ -294,6 +298,9 @@ class Builder:
             
             if concat and s!=os.path.sep:
                 s = s[:-1] # remove trailing /
+            
+            if d=='':
+                continue
                 
             s += d + os.path.sep
         
@@ -321,6 +328,9 @@ class Builder:
                     flag = infile
                 else:
                     flag = self.ResolveFlag(mode,flag)
+            
+            if flag == '':
+                continue
             
             if not concat:
                 cmd += ' '
@@ -359,12 +369,13 @@ class Builder:
         return p.wait()
 
     def Scan(self,mode):
-        self.GetDepExtractFunc(mode)
-        srcDir = self.ResolvePath(mode,GetModeVar(self.options,mode,'sourceDir'))
-        self.CollectAllCompilables(srcDir,GetModeVar(self.options,mode,'sourceExt'))
-        self.InvertDependencies()
-        self.GetRebuildSet(mode)
-
+        if GetModeVar(self.options,mode,'compileCmd') or GetModeVar(self.options,mode,'linkCmd'):
+            self.GetDepExtractFunc(mode)
+            srcDir = self.ResolvePath(mode,GetModeVar(self.options,mode,'sourceDir'))
+            self.CollectAllCompilables(srcDir,GetModeVar(self.options,mode,'sourceExt'))
+            self.InvertDependencies()
+            self.GetRebuildSet(mode)
+	
     def BuildObjectsFromList(self,l,totalCount):
         code = 0
         threadName = threading.current_thread().name
@@ -437,12 +448,19 @@ class Builder:
                 concat = False
                 for flag in cmd:
                     concat = False
+                    
+                    if flag=='':
+                        continue
+                    
                     if flag[0]=='#' or flag[:2]=='\\#':
                         concat = flag[0]=='#'
                         flag = flag[1:]
                         
                     if flag[0]=='%' or flag[:2]=='\\%':
                         flag = self.ResolveFlag(mode,flag)
+                        
+                    if flag=='':
+                        continue
                     
                     if concat:
                         builtCmd = builtCmd[:-1] #remove trailing space
@@ -473,6 +491,24 @@ class Builder:
         else:
             self.depExtractFunc = None
 
+    def IsBlankMode(self,mode):
+        cc = GetModeVar(self.options,mode,'compileCmd')
+        if cc:
+            return False
+
+        lc = GetModeVar(self.options,mode,'linkCmd')
+        if lc:
+            return False
+
+        prec = GetModeVar(self.options,mode,'preCmds')
+        if prec:
+            return False
+
+        postc = GetModeVar(self.options,mode,'postCmds')
+        if postc:
+            return False
+
+        return True
 
     def Build(self,mode):
         if mode=='':
@@ -481,11 +517,19 @@ class Builder:
         else:
             if mode not in self.options['modes']:
                 self.ModeNotFoundError(mode)
-            self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
+            if not self.IsBlankMode(mode):
+                self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {TextColor(CYAN,1)}{mode}{ResetTextColor()}")
 
         preCmds = self.GetPreCommands(mode)
         postCmds = self.GetPostCommands(mode)
         code = 0
+        
+        settings = GetModeVar(self.options,mode,'set')
+        if settings:
+            for key,value in settings.items():
+                if key[0]=='%' or key[:2]=='\\%':
+                    key = self.ResolveFlag(mode,key)
+                self.options[key] = value
 
         for command in preCmds:
             self.DebugPrint(f"{TextColor(MAGENTA)}{command}{ResetTextColor()}")
@@ -537,7 +581,8 @@ class Builder:
             if code!=0:
                 ErrorExit()
 
-        self.InfoPrint(f'{TextColor(WHITE,1)}Done!')
+        if not self.IsBlankMode(mode):
+            self.Done()
     
     def Clean(self,mode):
         if mode not in self.options['modes']:
@@ -658,8 +703,11 @@ def VerifyModesTypes(modes):
         error = False
         for key in modes[mode]:
             item = modes[mode][key]
-            if type(item) not in [str,list]:
+            if type(item) not in [str,list] and key!='set':
                 print(f'{TextColor(RED,1)}Type of "{key}" in mode {TextColor(CYAN,1)}{mode}{TextColor(RED,1)} is not a string or a list!')
+                error = True
+            elif key=='set' and type(item) is not dict:
+                print(f'{TextColor(RED,1)}Type of "set" must be dict!')
                 error = True
 
         if error:
