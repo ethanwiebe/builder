@@ -132,9 +132,9 @@ Any command that returns a non-zero error code will halt the build process.
 
 By specifying a `set` dictionary within an mode, each key will be set to its corresponding
 value. This can be useful when running several modes after one another because these
-changes persist. For example, in the case of multiplatform compilation:
+changes persist across a run. For example, in the case of multiplatform compilation:
 
-```json
+```js
     ...
     "somePlatform": {
         "set": {
@@ -142,20 +142,20 @@ changes persist. For example, in the case of multiplatform compilation:
         }
     },
     "someMode": {
-        "linkerFlags": ["-s","%libs","-o","%out"]
+        "linkerFlags": ["-s","%libs","-o","%out"],
         ...
-    }
+    },
     ...
 ```
 
 will set the `libs` variable that `someMode` later uses to choose which
-libraries to link against. This builder config would be called like this:
+libraries to link against. This builder config could be called like this:
 
     ./builder.py somePlatform someMode
 
 ### Installation
 
-Builder can be ran with `./builder.py`.  
+Builder can be ran with `./builder.py` or `python ./builder.py`.  
 On Linux systems `sudo ./install.sh` 
 will install builder at `/usr/local/bin/builder`.
 
