@@ -128,6 +128,31 @@ These commands are either a list of strings, each of which will be run as is, or
 list of lists of strings, each of which will be concatenated into a final string and run.
 Any command that returns a non-zero error code will halt the build process.
 
+#### Runtime Settings
+
+By specifying a `set` dictionary within an mode, each key will be set to its corresponding
+value. This can be useful when running several modes after one another because these
+changes persist. For example, in the case of multiplatform compilation:
+
+```json
+    ...
+    "somePlatform": {
+        "set": {
+            "libs": ["-llib1","-llib2"]
+        }
+    },
+    "someMode": {
+        "linkerFlags": ["-s","%libs","-o","%out"]
+        ...
+    }
+    ...
+```
+
+will set the `libs` variable that `someMode` later uses to choose which
+libraries to link against. This builder config would be called like this:
+
+    ./builder.py somePlatform someMode
+
 ### Installation
 
 Builder can be ran with `./builder.py`.  
