@@ -51,6 +51,7 @@ Example builder.json for a C++ project:
     ],
     
     "sourceDir": "src",
+    "includeDir": "include",
     "objectDir": [
         "build",
         "%mode"
@@ -113,8 +114,8 @@ with the previous flag. This also works with directories.
 
 #### Directories
 
-The directories `sourceDir`, `objectDir`, and `outputDir` can be 
-specified which will tell builder where to find source, object, 
+The directories `sourceDir`, `includeDir`, `objectDir`, and `outputDir` can be 
+specified which will tell builder where to find source, global header, object, 
 and output files respectively. They can be specified by either
 a string with the directory name `"example/path/to/dir"`, or a list of strings 
 that will be joined together to form the path `["example", "path", "to", "dir"]`.
