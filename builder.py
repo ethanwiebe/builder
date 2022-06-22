@@ -85,7 +85,7 @@ def CPPDeps(path,includeDir=''):
             if line.startswith('#include') and '"' in line:
                 dep = CPPExtractIncludeFile(line)
                 depprefix = os.path.join(prefix,dep)
-                if not os.path.exists(depprefix):
+                if not os.path.exists(depprefix) and includeDir!='':
                     depprefix = os.path.join(includeDir,dep)
                 deps.add(os.path.normpath(depprefix))
 
@@ -713,7 +713,7 @@ def VerifyModesTypes(modes):
             ErrorExit()
 
 def FixDirs(options):
-    dirs = ['sourceDir','objectDir','outputDir','includeDir']
+    dirs = ['sourceDir','objectDir','outputDir']
 
     for d in dirs:
         modes = options['modes']
@@ -764,7 +764,7 @@ def GetOptionsFromFile(file):
 
     defaults = [('compileCmd',''),('linkCmd',''),('outputName','a'),
             ('defaultMode',list(op['modes'].keys())[0]),('sourceExt','cpp'),
-            ('headerExt','h'),('objectExt','o'),('sourceDir','.'),
+            ('headerExt','h'),('objectExt','o'),('sourceDir','.'),('includeDir',''),
             ('objectDir','.'),('outputDir','.'),('preCmds',[]),('postCmds',[])]
 
     SetDefaults(op,defaults)
