@@ -36,8 +36,8 @@ Example builder.json for a C++ project:
     "linkCmd": "g++",
     
     "outputName": "a.out",
-    "headerExt": "h",
-    "sourceExt": "cpp",
+    "headerExt": ["h", "hpp"],
+    "sourceExt": ["c", "cpp"],
     "objectExt": "o",
     
     "compileFlags": [
