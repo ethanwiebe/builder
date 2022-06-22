@@ -87,7 +87,7 @@ def CPPDeps(path,includeDir=''):
                 depprefix = os.path.join(prefix,dep)
                 if not os.path.exists(depprefix):
                     depprefix = os.path.join(includeDir,dep)
-                deps.add(depprefix)
+                deps.add(os.path.normpath(depprefix))
 
     return deps
 
@@ -139,7 +139,7 @@ class Builder:
         self.depdict[path] = deps
         for d in deps:
             if d not in self.depdict: #if dependency not tracked, add it and recursively search for more deps
-                self.FindFileDependencies(d)
+                self.FindFileDependencies(d,includeDir)
     
     def InvertDependencies(self):
         self.invdict = {}
