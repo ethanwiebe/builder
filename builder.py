@@ -453,13 +453,13 @@ class Builder:
             thread.start()
             threads.append(thread)
         
-        try:
-            while threading.active_count()!=1:
-                if self.HasCommandFailed():
-                    quit()
-                time.sleep(0.25)
-        except KeyboardInterrupt:
-            self.SetCommandFailed()
+        #try:
+        while threading.active_count()!=1:
+            if self.HasCommandFailed():
+                quit()
+            time.sleep(0.25)
+        #except KeyboardInterrupt:
+         #   self.SetCommandFailed()
 
         if self.HasCommandFailed():
             self.CommandFailedQuit()
@@ -628,10 +628,7 @@ class Builder:
                 src = self.GetObjectsPath(mode)
                 dest = self.GetOutputPath(mode)
                 self.InfoPrint(f'{TextColor(GREEN)}Linking: {TextColor(BLUE)}{src} {TextColor(WHITE,1)}-> {TextColor(GREEN,1)}{dest}{ResetTextColor()}')
-            try:
-                code = self.RunCommand(cmd)
-            except KeyboardInterrupt:
-                code = 1
+            code = self.RunCommand(cmd)
 
             if code!=0:
                 self.InfoPrint(f"{TextColor(RED,1)}Linker error!{ResetTextColor()}")
@@ -875,7 +872,6 @@ def main():
     if args.nocolor or not sys.stdout.isatty():
         noColor = True
 
-
     builderLog = ''
 
     if args.log:
@@ -922,4 +918,8 @@ def main():
 
 
 if __name__=='__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print()
+        quit(1)
