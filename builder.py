@@ -107,6 +107,7 @@ class Builder:
         self.rebuildList = []
         self.debug = False
         self.quiet = False
+        self.single = False
 
         self.commandFailed = False
         self.failLock = threading.Lock()
@@ -452,13 +453,15 @@ class Builder:
 
     def DispatchCommands(self,cmdList,totalCount):
         cores = os.cpu_count()
-        threads = []
+        if self.single:
+            cores = 1
         self.dispatchedCommands = cmdList
 
         for i in range(cores):
             thread = threading.Thread(target=self.BuildObjectsFromList,args=(totalCount,),name=str(i+1))
             thread.start()
-            threads.append(thread)
+            if self.single:
+                thread.join()
         
         while threading.active_count()!=1:
             if self.HasCommandFailed():
@@ -843,8 +846,9 @@ def main():
     parser.add_argument("mode",default='',help="specify the build modes to run",nargs='*')
     parser.add_argument("-b",metavar='FILE',default='builder.json',help="specify name of builder file to use (default builder.json)")
     parser.add_argument("-c","--clean",help="remove all object and output files",action="store_true")
+    parser.add_argument("-s","--single",action="store_true",help="run single-threaded")
     group.add_argument("-v","--verbose",help="print more info for debugging",action="store_true")
-    group.add_argument('-q','--quiet',help='silence builder output',action='store_true')
+    group.add_argument("-q","--quiet",help="silence builder output",action="store_true")
     parser.add_argument("--stats",action="store_true",help="print stats about the project")
     parser.add_argument("--log",metavar="FILE",default="",help="write output to the specified log file")
     parser.add_argument("--nocolor",help="disables output of color escape sequences",action="store_true")
@@ -878,6 +882,9 @@ def main():
     
     if args.quiet:
         b.quiet = True
+    
+    if args.single:
+        b.single = True
 
     if args.stats:
         b.Stats(args.mode[0])
