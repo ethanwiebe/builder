@@ -275,8 +275,22 @@ class Builder:
                 if not os.path.exists(test):
                     print(f'{TextColor(YELLOW)}Creating {test}{ResetTextColor()}')
                     MakePath(test)
+    
+    def FlagListPreprocess(self,mode,name,flagList):
+        newList = []
+        for flag in flagList:
+            if flag[1:]==name:
+                if name not in self.options:
+                    print(f"{TextColor(RED,1)}Flag '{name}' in mode '{mode}' is not present in root dict!")
+                    ErrorExit()
+                
+                newList.extend(self.options[name])
+            else:
+                newList.append(flag)
+        
+        return newList
 
-    def ResolveFlag(self,mode,flag):
+    def ResolveFlag(self,mode,flag,inFlag='%in',outFlag='%out'):
         if flag[:2]=='\\%': return flag[1:] # escaped flag name
         if flag=='%mode':
             return mode
@@ -292,7 +306,8 @@ class Builder:
             if 'Dir' in flag:
                 return self.ResolvePath(mode,var)
             if type(var)==list:
-                return self.GetCommandFlags(mode,var,'%in','%out')
+                var = self.FlagListPreprocess(mode,flag[1:],var)
+                return self.GetCommandFlags(mode,var,inFlag,outFlag)
                 
             return str(var)
 
@@ -349,7 +364,7 @@ class Builder:
                 elif flag[1:] == 'in':
                     flag = infile
                 else:
-                    flag = self.ResolveFlag(mode,flag)
+                    flag = self.ResolveFlag(mode,flag,infile,outfile)
             
             if flag == '':
                 continue
@@ -363,13 +378,9 @@ class Builder:
 
     def GetCompileCommand(self,mode,file):
         cmd = GetModeVar(self.options,mode,'compileCmd')
-        compileFlags = GetModeCompileFlags(self.options,mode)
         objVersion = self.GetObjectFromSource(mode,file)
         if type(cmd)==list:
-            compileFlags = cmd + compileFlags
-            cmd = self.GetCommandFlags(mode,compileFlags,file,objVersion)
-        else:
-            cmd += ' '+self.GetCommandFlags(mode,compileFlags,file,objVersion)
+            cmd = self.GetCommandFlags(mode,cmd,file,objVersion)
 
         return cmd
 
@@ -377,12 +388,8 @@ class Builder:
         cmd = GetModeVar(self.options,mode,'linkCmd')
         inputFiles = self.GetObjectsPath(mode)
         outputFile = self.GetOutputPath(mode)
-        linkFlags = GetModeLinkFlags(self.options,mode)
         if type(cmd)==list:
-            linkFlags = cmd + linkFlags
-            cmd = self.GetCommandFlags(mode,linkFlags,inputFiles,outputFile)
-        else:
-            cmd += ' '+self.GetCommandFlags(mode,linkFlags,inputFiles,outputFile)
+            cmd = self.GetCommandFlags(mode,cmd,inputFiles,outputFile)
 		
         return cmd
     
@@ -453,13 +460,10 @@ class Builder:
             thread.start()
             threads.append(thread)
         
-        #try:
         while threading.active_count()!=1:
             if self.HasCommandFailed():
                 quit()
             time.sleep(0.25)
-        #except KeyboardInterrupt:
-         #   self.SetCommandFailed()
 
         if self.HasCommandFailed():
             self.CommandFailedQuit()
@@ -693,26 +697,6 @@ def ExitingMsg():
 def ErrorExit():
     print(ExitingMsg())
     quit(1)
-
-def GetModeCompileFlags(options,mode):
-    flags = []
-    if 'compileFlags' in options['modes'][mode]:
-        flags += options['modes'][mode]['compileFlags']
-
-    if 'compileFlags' in options:
-        flags += options['compileFlags']
-
-    return flags
-
-def GetModeLinkFlags(options,mode):
-    flags = []
-    if 'linkFlags' in options['modes'][mode]:
-        flags += options['modes'][mode]['linkFlags']
-
-    if 'linkFlags' in options:
-        flags += options['linkFlags']
-
-    return flags
 
 def GetModeVar(options,mode,varName): # return a mode var, falling back to the root dict if not available in mode
     if varName in options['modes'][mode]:
