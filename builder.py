@@ -131,17 +131,17 @@ class Builder:
         self.printLock = threading.Lock()
         self.dispatchLock = threading.Lock()
 
-    def DebugPrint(self,msg):
+    def DebugPrint(self,msg,end='\n'):
         if self.debug:
-            self.InfoPrint(msg)
+            self.InfoPrint(msg,end)
 
-    def InfoPrint(self,msg):
+    def InfoPrint(self,msg,end='\n'):
         if not self.quiet:
-            print(msg,flush=True)
+            print(msg,flush=True,end=end)
 
-    def ThreadedPrint(self,msg):
+    def ThreadedPrint(self,msg,end='\n'):
         with self.printLock:
-            self.InfoPrint(msg)
+            self.InfoPrint(msg,end)
     
     def GetSourceExts(self,mode):
         exts = GetModeVar(self.options,mode,'sourceExt')
@@ -743,6 +743,17 @@ class Builder:
         self.InfoPrint(f"{TextColor(YELLOW)}Source count: {MODE()}{str(sourceCount).rjust(justSize)}\n")
         
         self.InfoPrint(f"{TextColor(YELLOW,1)}Code size:    {TextColor(GREEN,1)}{str(totalSize).rjust(justSize)}{TextColor(WHITE,1)}K{RESET()}")
+    
+    def List(self,mode):
+        self.FixMode(mode.copy())
+        allModes = GetAllSubModes(GetModeDict(self.options,mode)['modes'],mode)
+        if allModes == []:
+            allModes = [mode]
+            
+        self.InfoPrint(f"{MODE()}",end='')
+        for m in allModes:
+            self.InfoPrint(ModeStr(m))
+        self.InfoPrint(RESET(),end='')
 
 
 def ExitingMsg():
@@ -948,13 +959,15 @@ def main():
 
     parser = argparse.ArgumentParser(prog='builder',description="Only builds what needs to be built.")
     group = parser.add_mutually_exclusive_group()
+    actions = parser.add_mutually_exclusive_group()
     parser.add_argument("mode",default='',help="specify the build modes to run",nargs='*')
     parser.add_argument("-b",metavar='FILE',default='Builderfile',help="specify name of builder file to use (default Builderfile, builder.json)")
-    parser.add_argument("-c","--clean",help="remove all object and output files",action="store_true")
+    actions.add_argument("-c","--clean",help="remove all object and output files",action="store_true")
+    actions.add_argument("--stats",action="store_true",help="print stats about the project")
+    actions.add_argument("-l","--list",action="store_true",help="print all available modes")
     parser.add_argument("-s","--single",action="store_true",help="run single-threaded")
     group.add_argument("-v","--verbose",help="print more info for debugging",action="store_true")
     group.add_argument("-q","--quiet",help="silence builder output",action="store_true")
-    parser.add_argument("--stats",action="store_true",help="print stats about the project")
     parser.add_argument("--log",metavar="FILE",default="",help="write output to the specified log file")
     parser.add_argument("--nocolor",help="disables output of color escape sequences",action="store_true")
     parser.add_argument("--version",action="store_true",help='show program\'s version number and exit')
@@ -992,6 +1005,10 @@ def main():
     
     if args.single:
         b.single = True
+
+    if args.list:
+        b.List(modes[0])
+        quit()
 
     if args.stats:
         b.Stats(modes[0])
