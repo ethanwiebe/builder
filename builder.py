@@ -242,7 +242,7 @@ class Builder:
         
         includeDir = GetModeVar(self.options,mode,'includeDir')
         if includeDir!=None:
-            includeDir = self.GetPath(mode,'includeDir')#self.ResolvePath(mode,includeDir)
+            includeDir = self.GetPath(mode,'includeDir')
 
         for headerFile in self.invdict:
             headerAge = GetFileTime(headerFile)
@@ -426,12 +426,10 @@ class Builder:
         return cmd.lstrip()
 
     def GetCompileCommand(self,mode,file):
-        #cmd = GetModeVar(self.options,mode,'compileCmd')
         objVersion = self.GetObjectFromSource(mode,file)
         return self.GetCommand(mode,'compileCmd',file,objVersion)
 
     def GetLinkCommand(self,mode):
-        #cmd = GetModeVar(self.options,mode,'linkCmd')
         inputFiles = self.GetObjectsPath(mode)
         outputFile = self.GetOutputPath(mode)
         return self.GetCommand(mode,'linkCmd',inputFiles,outputFile)
@@ -545,31 +543,6 @@ class Builder:
             if type(cmd) is list:
                 builtCmd = self.GetCommandFlags(mode,cmd,'%in','%out')
                 properCmds.append(builtCmd)
-                #builtCmd = ''
-                #concat = False
-                #for flag in cmd:
-                #    concat = False
-                #    
-                #    if flag=='':
-                #        continue
-                #    
-                #    if flag[0]=='#' or flag[:2]=='\\#':
-                #        concat = flag[0]=='#'
-                #        flag = flag[1:]
-                #        
-                #    if flag[0]=='%' or flag[:2]=='\\%':
-                #        flag = self.ResolveFlag(mode,flag)
-                #        
-                ##    if flag=='':
-                #        continue
-                ##    
-                #    if concat:
-                #        builtCmd = builtCmd[:-1] #remove trailing space
-                #        
-                #    builtCmd += flag+' '
-                    
-               # builtCmd = builtCmd[:-1] #remove trailing space
-               # properCmds.append(builtCmd)
             elif type(cmd) is str:
                 if cmd[0]=='%':
                     cmd = self.ResolveFlag(mode,cmd)
@@ -812,35 +785,6 @@ def GetModeVar(options,mode,varName): # return a mode var, falling back to the r
             best = curr[submode][varName]
         curr = curr[submode]['modes']
     return best
-
-def VerifyModesTypes(modes,history=[]):
-    for mode in modes:
-        if '/' in mode:
-            print(f"{ERROR()}Mode name cannot contain '/'!")
-            ErrorExit()
-        if type(modes[mode]) is str and modes[mode][0]=='%':
-            continue
-        elif type(modes[mode]) is not dict:
-            print(f'{ERROR()}Mode {MODE()}{ModeStr(history+[mode])}{ERROR()} must be of type dict or str var!')
-            ErrorExit()
-        
-        error = False
-        for key in modes[mode]:
-            item = modes[mode][key]
-            if type(item) not in [str,list] and key not in ('set','modes'):
-                print(f"{ERROR()}Type of '{key}' in mode {MODE()}{ModeStr(history+[mode])}{ERROR()} is not a string or a list!")
-                error = True
-            elif key=='set' and type(item) is not dict:
-                print(f"{ERROR()}Type of 'set' in mode {MODE()}{ModeStr(history+[mode])}{ERROR()} must be dict!")
-                error = True
-            
-            if key=='modes':
-                if type(item) is not dict:
-                    print(f"{ERROR()}Type of 'modes' in mode {MODE()}{ModeStr(history+[mode])}{ERROR()} must be dict!")
-                VerifyModesTypes(item,history+[mode])
-
-        if error:
-            ErrorExit()
 
 def FixDirs(options):
     dirs = ['sourceDir','objectDir','outputDir']
