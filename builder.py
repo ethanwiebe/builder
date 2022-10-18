@@ -396,6 +396,9 @@ class Builder:
         return s
     
     def GetCommandFlags(self,mode,flags,infile,outfile):
+        if type(flags) is str:
+            return flags
+            
         cmd = ''
         concat = False
         for flag in flags:
