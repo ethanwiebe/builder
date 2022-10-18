@@ -12,6 +12,13 @@ WHITE = 7
 
 noColor = False
 
+def GetPlatform():
+	if sys.platform == 'win32' or sys.platform == 'cygwin':
+		return 'windows'
+	if sys.platform == 'darwin':
+		return 'macOS'
+	return sys.platform
+
 def RESET():
     global noColor
     if noColor:
@@ -321,7 +328,7 @@ class Builder:
         if flag=='%utime':
             return str(int(time.time()))
         if flag=='%platform':
-            return sys.platform.upper()
+            return GetPlatform()
         
         var = GetModeVar(self.options,mode,flag[1:])
         if var!=None:
@@ -492,9 +499,15 @@ class Builder:
         if self.HasCommandFailed():
             self.CommandFailedQuit()
 
-    def GetDefaultMode(self,mode):
+    def GetDefaultMode(self,op):
+        m = op['defaultMode']
+        if m=='%platform':
+            m = GetPlatform()
+        return m
+
+    def FixMode(self,mode):
         if mode==[]:
-            mode = [self.options['defaultMode']]
+            mode = [self.GetDefaultMode(self.options)]
         curr = self.options
         for submode in mode:
             if submode not in curr['modes']:
@@ -502,8 +515,9 @@ class Builder:
             curr = curr['modes'][submode]
         
         while 'defaultMode' in curr:
-            mode.append(curr['defaultMode'])
-            curr = curr['modes'][curr['defaultMode']]
+            df = self.GetDefaultMode(curr)
+            mode.append(df)
+            curr = curr['modes'][df]
         
         return mode
 
@@ -612,10 +626,10 @@ class Builder:
 
     def Build(self,mode):
         if mode==[]:
-            mode = self.GetDefaultMode(mode)
+            mode = self.FixMode(mode)
             self.InfoPrint(f"{TextColor(WHITE,1)}Using default mode {MODE()}{ModeStr(mode)}{RESET()}")
         else:
-            mode = self.GetDefaultMode(mode)
+            mode = self.FixMode(mode)
             if not self.IsBlankMode(mode):
                 self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {MODE()}{ModeStr(mode)}{RESET()}")
 
@@ -720,7 +734,7 @@ class Builder:
                 self.Done()
 
     def Stats(self,mode):
-        mode = self.GetDefaultMode(mode)
+        mode = self.FixMode(mode)
         
         self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {MODE()}{ModeStr(mode)}{RESET()}")
 
