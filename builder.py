@@ -158,7 +158,7 @@ class Builder:
         return exts
 
     def DirContainsObjects(self,mode):
-        d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
+        d = self.GetPath(mode,'objectDir')
         if not os.path.exists(d):
             return False
             
@@ -222,7 +222,7 @@ class Builder:
         self.depdict = {}
         self.invdict = {}
         self.rebuildList = []
-        includeDir = self.ResolvePath(mode,GetModeVar(self.options,mode,'includeDir'))
+        includeDir = self.GetPath(mode,'includeDir')
         self.CollectCompilables(srcDir,srcExts,includeDir)
         self.DebugPrint(f"Found {len(self.compileFiles)} source files.")
         self.DebugPrint(f"Tracked {len(self.depdict)} total dependencies.")
@@ -242,7 +242,7 @@ class Builder:
         
         includeDir = GetModeVar(self.options,mode,'includeDir')
         if includeDir!=None:
-            includeDir = self.ResolvePath(mode,includeDir)
+            includeDir = self.GetPath(mode,'includeDir')#self.ResolvePath(mode,includeDir)
 
         for headerFile in self.invdict:
             headerAge = GetFileTime(headerFile)
@@ -264,15 +264,15 @@ class Builder:
         SortByFileTimesIP(self.rebuildList)
 
     def GetObjectsPath(self,mode):
-        d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
+        d = self.GetPath(mode,'objectDir')
         return os.path.join(d,SetExtension('*',GetModeVar(self.options,mode,'objectExt')))
 
     def GetObjectFromSource(self,mode,src):
-        d = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
+        d = self.GetPath(mode,'objectDir')
         return os.path.join(d,AddExtension(os.path.basename(src),GetModeVar(self.options,mode,'objectExt')))
 
     def GetOutputPath(self,mode):
-        d = self.ResolvePath(mode,GetModeVar(self.options,mode,'outputDir'))
+        d = self.GetPath(mode,'outputDir')
         return os.path.join(d,GetModeVar(self.options,mode,'outputName'))
 
     def GetBuilderPath(self):
@@ -286,28 +286,47 @@ class Builder:
                 continue
                 
             if GetModeVar(self.options,real,'linkCmd'):
-                test = self.ResolvePath(real,GetModeVar(self.options,real,'outputDir'))
+                test = self.GetPath(real,'outputDir')
                 if not os.path.exists(test):
                     MakePath(test)
             
             if GetModeVar(self.options,real,'compileCmd'):
-                test = self.ResolvePath(real,GetModeVar(self.options,real,'objectDir'))
+                test = self.GetPath(real,'objectDir')
                 if not os.path.exists(test):
                     MakePath(test)
             
-            test = self.ResolvePath(real,GetModeVar(self.options,real,'sourceDir'))
+            test = self.GetPath(real,'sourceDir')
             if not os.path.exists(test):
                 MakePath(test)
+                
+    def GetPath(self,mode,name):
+        var = GetModeVar(self.options,mode,name)
+        properMode = GetModeMode(self.options,mode,name)
+        if type(var) is list:
+            var = self.FlagListPreprocess(properMode,name,var)
+        
+        return self.ResolvePath(mode,var)
+    
+    def GetCommand(self,mode,name,infile='%in',outfile='%out'):
+        var = GetModeVar(self.options,mode,name)
+        properMode = GetModeMode(self.options,mode,name)
+        if type(var) is list:
+            var = self.FlagListPreprocess(properMode,name,var)
+        
+        return self.GetCommandFlags(mode,var,infile,outfile)
         
     def FlagListPreprocess(self,mode,name,flagList):
         newList = []
         for flag in flagList:
             if flag[1:]==name:
-                if name not in self.options:
-                    print(f"{ERROR()}Flag '{name}' in mode '{mode}' is not present in root dict!")
+                v = GetModeVar(self.options,mode[:-1],name)
+                higher = GetModeMode(self.options,mode[:-1],name)
+                if v is None:
+                    print(f"{ERROR()}Flag '{name}' in mode {MODE()}{ModeStr(mode)}{ERROR()} is not present in a higher scope!")
                     ErrorExit()
                 
-                newList.extend(self.options[name])
+                ext = self.FlagListPreprocess(higher,name,v)
+                newList.extend(ext)
             else:
                 newList.append(flag)
         
@@ -332,11 +351,12 @@ class Builder:
         
         var = GetModeVar(self.options,mode,flag[1:])
         if var!=None:
-            if 'Dir' in flag:
-                return self.ResolvePath(mode,var)
-            if type(var)==list:
-                var = self.FlagListPreprocess(mode,flag[1:],var)
-                return self.GetCommandFlags(mode,var,inFlag,outFlag)
+            if type(var) is list:
+                proper = GetModeMode(self.options,mode,flag[1:])
+                nv = self.FlagListPreprocess(proper,flag[1:],var)
+                if 'Dir' in flag:
+                    return self.ResolvePath(mode,nv)
+                return self.GetCommandFlags(mode,nv,inFlag,outFlag)
                 
             return str(var)
 
@@ -344,7 +364,7 @@ class Builder:
         ErrorExit()
        
     def ResolvePath(self,mode,pathList):
-        if type(pathList)==str:
+        if type(pathList) is str:
             return pathList # pathList is already a string
     
         s = ''
@@ -406,21 +426,15 @@ class Builder:
         return cmd.lstrip()
 
     def GetCompileCommand(self,mode,file):
-        cmd = GetModeVar(self.options,mode,'compileCmd')
+        #cmd = GetModeVar(self.options,mode,'compileCmd')
         objVersion = self.GetObjectFromSource(mode,file)
-        if type(cmd)==list:
-            cmd = self.GetCommandFlags(mode,cmd,file,objVersion)
-
-        return cmd
+        return self.GetCommand(mode,'compileCmd',file,objVersion)
 
     def GetLinkCommand(self,mode):
-        cmd = GetModeVar(self.options,mode,'linkCmd')
+        #cmd = GetModeVar(self.options,mode,'linkCmd')
         inputFiles = self.GetObjectsPath(mode)
         outputFile = self.GetOutputPath(mode)
-        if type(cmd)==list:
-            cmd = self.GetCommandFlags(mode,cmd,inputFiles,outputFile)
-		
-        return cmd
+        return self.GetCommand(mode,'linkCmd',inputFiles,outputFile)
     
     def RunCommand(self,cmd):
         p = subprocess.Popen(cmd,stdout=sys.stdout,stderr=sys.stderr,shell=True)
@@ -429,7 +443,7 @@ class Builder:
     def Scan(self,mode):
         if GetModeVar(self.options,mode,'compileCmd') or GetModeVar(self.options,mode,'linkCmd'):
             self.GetDepExtractFunc(mode)
-            srcDir = self.ResolvePath(mode,GetModeVar(self.options,mode,'sourceDir'))
+            srcDir = self.GetPath(mode,'sourceDir')
             self.CollectAllCompilables(mode,srcDir,self.GetSourceExts(mode))
             self.InvertDependencies()
             self.GetRebuildSet(mode)
@@ -528,34 +542,40 @@ class Builder:
     def GetCommands(self,mode,cmdList):
         properCmds = []
         for cmd in cmdList:
-            if type(cmd) == list:
-                builtCmd = ''
-                concat = False
-                for flag in cmd:
-                    concat = False
-                    
-                    if flag=='':
-                        continue
-                    
-                    if flag[0]=='#' or flag[:2]=='\\#':
-                        concat = flag[0]=='#'
-                        flag = flag[1:]
-                        
-                    if flag[0]=='%' or flag[:2]=='\\%':
-                        flag = self.ResolveFlag(mode,flag)
-                        
-                    if flag=='':
-                        continue
-                    
-                    if concat:
-                        builtCmd = builtCmd[:-1] #remove trailing space
-                        
-                    builtCmd += flag+' '
-                    
-                builtCmd = builtCmd[:-1] #remove trailing space
+            if type(cmd) is list:
+                builtCmd = self.GetCommandFlags(mode,cmd,'%in','%out')
                 properCmds.append(builtCmd)
-            elif type(cmd) == str:
-                properCmds.append(cmd)
+                #builtCmd = ''
+                #concat = False
+                #for flag in cmd:
+                #    concat = False
+                #    
+                #    if flag=='':
+                #        continue
+                #    
+                #    if flag[0]=='#' or flag[:2]=='\\#':
+                #        concat = flag[0]=='#'
+                #        flag = flag[1:]
+                #        
+                #    if flag[0]=='%' or flag[:2]=='\\%':
+                #        flag = self.ResolveFlag(mode,flag)
+                #        
+                ##    if flag=='':
+                #        continue
+                ##    
+                #    if concat:
+                #        builtCmd = builtCmd[:-1] #remove trailing space
+                #        
+                #    builtCmd += flag+' '
+                    
+               # builtCmd = builtCmd[:-1] #remove trailing space
+               # properCmds.append(builtCmd)
+            elif type(cmd) is str:
+                if cmd[0]=='%':
+                    cmd = self.ResolveFlag(mode,cmd)
+                    properCmds.append(cmd)
+                else:
+                    properCmds.append(cmd)
                 
         return properCmds
 
@@ -575,7 +595,7 @@ class Builder:
         
     def PruneObjects(self,mode):
         pruned = False
-        objDir = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
+        objDir = self.GetPath(mode,'objectDir')
         objFiles = os.listdir(objDir)
         objExt = GetModeVar(self.options,mode,'objectExt')
         
@@ -718,7 +738,7 @@ class Builder:
                 self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {MODE()}{ModeStr(mode)}{RESET()}")
                 self.InfoPrint(f"{TextColor(WHITE,1)}Cleaning up...{TextColor(YELLOW)}")
                 if self.DirContainsObjects(mode):
-                    path = self.ResolvePath(mode,GetModeVar(self.options,mode,'objectDir'))
+                    path = self.GetPath(mode,'objectDir')
                     self.InfoPrint(f"{TextColor(YELLOW)}Removing {os.path.join(path,'*.o')}")
                     ext = GetModeVar(self.options,mode,'objectExt')
                     files = os.listdir(path)
@@ -766,6 +786,20 @@ def GetModeDict(options,mode): # return the dict corresponding to this mode/subm
         d = curr[submode]
         curr = curr[submode]['modes']
     return d
+    
+def GetModeMode(options,mode,varName): # return the most specific mode containing variable varName
+	best = None
+	if varName in options:
+		best = []
+	
+	curr = options['modes']
+	working = []
+	for submode in mode:
+		working.append(submode)
+		if varName in curr[submode]:
+			best = working.copy()
+		curr = curr[submode]['modes']
+	return best
 
 def GetModeVar(options,mode,varName): # return a mode var, falling back to the root dict if not available in mode
     best = None
@@ -867,6 +901,10 @@ def CreateSubModeDicts(modes,history=[]):
             
 def ResolveModeStrs(options,mode,curr):
 	for name,d in curr.items():
+		if '/' in name:
+			print(f"{ERROR()}Mode name cannot contain '/' ({MODE()}{ModeStr(mode)}{ERROR()})!")
+			ErrorExit()
+			
 		if type(d) is str:
 			var = d[1:]
 			rep = GetModeVar(options,mode,var)
@@ -874,14 +912,36 @@ def ResolveModeStrs(options,mode,curr):
 				print(f"{ERROR()}Cannot resolve variable mode '{var}'!")
 				ErrorExit()
 			curr[name] = copy.deepcopy(rep)
+			d = curr[name]
+		if type(d) is not dict:
+			print(f"{ERROR()}Type of mode {MODE()}{ModeStr(mode)}{ERROR()} must be dict!")
+			ErrorExit()
 			
-		if 'modes' in curr[name]:
-			ResolveModeStrs(options,mode+[name],curr[name]['modes'])
-    
+		if 'modes' in d:
+			if type(d['modes']) is str and d['modes'][0]=='%':
+				var = d['modes'][1:]
+				rep = GetModeVar(options,mode,var)
+				if rep is None:
+					print(f"{ERROR()}Cannot resolve 'modes' variable '{var}'!")
+					ErrorExit()
+				d['modes'] = copy.deepcopy(rep)
+				
+			if type(d['modes']) is not dict:
+				print(f"{ERROR()}Type of 'modes' in mode {MODE()}{ModeStr(mode)}{ERROR()} must be dict!")
+				ErrorExit()
+			
+			ResolveModeStrs(options,mode+[name],d['modes'])
+
 def GetOptionsFromFile(file):
     if not os.path.exists(f".{os.path.sep}{file}"):
-        print(f"{ERROR()}No {file} file found!{RESET()}")
-        ErrorExit()
+        if file=='Builderfile':
+            file = 'builder.json'
+            if not os.path.exists(f".{os.path.sep}{file}"):
+                print(f"{ERROR()}No Builderfile found!")
+                ErrorExit()
+        else:
+            print(f"{ERROR()}No {file} file found!")
+            ErrorExit()
 
     s = ''
     with open(file,'r') as f:
@@ -899,7 +959,13 @@ def GetOptionsFromFile(file):
     if 'modes' not in op:
         print(f"{ERROR()}Builder file must specify 'modes'!")
         ErrorExit()
-    elif type(op['modes'])!=dict:
+    elif type(op['modes']) is str and op['modes'][0]=='%':
+        if op['modes'][1:] not in op:
+            print(f"{ERROR()}Variable '{op['modes'][1:]}' not found!")
+            ErrorExit()
+        op['modes'] = op[op['modes'][1:]]
+        
+    if type(op['modes']) is not dict:
         print(f"{ERROR()}Expected 'modes' to be of type dict!")
         ErrorExit()
     elif len(op['modes'])==0:
@@ -911,8 +977,6 @@ def GetOptionsFromFile(file):
         ErrorExit()
 
     modes = op['modes']
-    
-    VerifyModesTypes(modes)
     
     ResolveModeStrs(op,[],op['modes'])
     CreateSubModeDicts(modes)
@@ -941,7 +1005,7 @@ def main():
     parser = argparse.ArgumentParser(prog='builder',description="Only builds what needs to be built.")
     group = parser.add_mutually_exclusive_group()
     parser.add_argument("mode",default='',help="specify the build modes to run",nargs='*')
-    parser.add_argument("-b",metavar='FILE',default='builder.json',help="specify name of builder file to use (default builder.json)")
+    parser.add_argument("-b",metavar='FILE',default='Builderfile',help="specify name of builder file to use (default Builderfile, builder.json)")
     parser.add_argument("-c","--clean",help="remove all object and output files",action="store_true")
     parser.add_argument("-s","--single",action="store_true",help="run single-threaded")
     group.add_argument("-v","--verbose",help="print more info for debugging",action="store_true")
