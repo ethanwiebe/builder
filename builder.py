@@ -157,17 +157,38 @@ class Builder:
         
         return exts
 
-    def DirContainsObjects(self,mode):
-        d = self.GetPath(mode,'objectDir')
-        if not os.path.exists(d):
-            return False
-            
-        l = os.listdir(d)
+    def RemoveObjects(self,path,ext):
+        l = os.listdir(path)
         for f in l:
-            if GetExtension(f)==GetModeVar(self.options,mode,'objectExt'):
-                return True
+            p = os.path.join(path,f)
+            if os.path.isdir(p):
+                self.RemoveObjects(p,ext)
+            elif os.path.isfile(p):
+                if GetExtension(f)==ext:
+                    os.remove(p)
+                    self.DebugPrint(f"{TextColor(MAGENTA)}Deleting {p}...{RESET()}")
+		
+    def DirContainsObjectsSub(self,path,ext):
+        l = os.listdir(path)
+        for f in l:
+            p = os.path.join(path,f)
+            if os.path.isdir(p):
+                if self.DirContainsObjectsSub(p,ext):
+                    return True
+            elif os.path.isfile(p):
+                if GetExtension(f)==ext:
+                    return True
 
         return False
+    
+    def DirContainsObjects(self,mode):
+        path = self.GetPath(mode,'objectDir')
+        ext = GetModeVar(self.options,mode,'objectExt')
+        
+        if not os.path.exists(path):
+            return False
+        
+        return self.DirContainsObjectsSub(path,ext)
 
     def FindFileDependencies(self,path,includeDir=''):
         if not os.path.exists(path):
@@ -263,13 +284,18 @@ class Builder:
         self.rebuildList = list(self.rebuildSet)
         SortByFileTimesIP(self.rebuildList)
 
-    def GetObjectsPath(self,mode):
+    def GetObjectPaths(self,mode):
         d = self.GetPath(mode,'objectDir')
-        return os.path.join(d,SetExtension('*',GetModeVar(self.options,mode,'objectExt')))
+        s = ''
+        for file in self.compileFiles:
+            p = self.GetObjectFromSource(mode,file)
+            s += p+' '
+            
+        return s[:-1]
 
     def GetObjectFromSource(self,mode,src):
         d = self.GetPath(mode,'objectDir')
-        return os.path.join(d,AddExtension(os.path.basename(src),GetModeVar(self.options,mode,'objectExt')))
+        return os.path.join(d,AddExtension(src,GetModeVar(self.options,mode,'objectExt')))
 
     def GetOutputPath(self,mode):
         d = self.GetPath(mode,'outputDir')
@@ -433,7 +459,7 @@ class Builder:
         return self.GetCommand(mode,'compileCmd',file,objVersion)
 
     def GetLinkCommand(self,mode):
-        inputFiles = self.GetObjectsPath(mode)
+        inputFiles = self.GetObjectPaths(mode)
         outputFile = self.GetOutputPath(mode)
         return self.GetCommand(mode,'linkCmd',inputFiles,outputFile)
     
@@ -467,6 +493,11 @@ class Builder:
                 quit()
                 
             src,obj,cmd,index = req[0],req[1],req[2],req[3]
+            objDir = os.path.dirname(obj)
+            if not os.path.exists(objDir):
+                if self.debug:
+                    self.ThreadedPrint(f"{TextColor(MAGENTA)}Created build path {objDir}{RESET()}")
+                MakePathSub(objDir)
                 
             if self.debug:
                 self.ThreadedPrint(f"{TextColor(BLUE)}{cmd}{RESET()}")
@@ -569,37 +600,43 @@ class Builder:
     def GetDepExtractFunc(self,mode):
         self.depExtractFunc = CPPDeps
         
+    def PruneObjectsSub(self,path,ext):
+        files = os.listdir(path)
+        for file in files:
+            p = os.path.join(path,file)
+            if os.path.isdir(p):
+                self.PruneObjectsSub(p,ext)
+            elif os.path.isfile(p):
+                if GetExtension(file)==ext:
+                    prune = False
+                    if os.path.getsize(p)==0:
+                        prune = True
+                        self.DebugPrint(f"Pruned zero-size object: {p}")
+                    else:
+                        src = os.path.splitext(p)[0]
+                        found = False
+                        for srcFile in self.compileFiles:
+                            if src.endswith(srcFile):
+                                found = True
+                                break
+                        if not found:
+                            prune = True
+                            self.DebugPrint(f"Pruned object with no corresponding source: {p}")
+            
+                    if prune:
+                        self.DebugPrint(f"Removing {p}")
+                        os.remove(p)
+                        self.pruned = True
+        
     def PruneObjects(self,mode):
-        pruned = False
+        self.pruned = False
         objDir = self.GetPath(mode,'objectDir')
-        objFiles = os.listdir(objDir)
         objExt = GetModeVar(self.options,mode,'objectExt')
         
-        for file in objFiles:
-            prune = False
-            if GetExtension(file)==objExt:
-                if os.path.getsize(os.path.join(objDir,file))==0:
-                    prune = True
-                    self.DebugPrint(f"Pruned zero-size object: {file}")
-                else:
-                    src = os.path.splitext(os.path.basename(file))[0]
-                    found = False
-                    for srcFile in self.compileFiles:
-                        if os.path.basename(srcFile)==src:
-                            found = True
-                            break
-                    if not found:
-                        prune = True
-                        self.DebugPrint(f"Pruned object with no corresponding source: {file}")
-            
-            if prune:
-                p = os.path.join(objDir,file)
-                os.remove(p)
-                pruned = True
-                self.DebugPrint(f"Removing {p}")
-                
-        if pruned:
-            self.Scan(mode) #rescan
+        self.PruneObjectsSub(objDir,objExt)
+        
+        if self.pruned:
+            self.Scan(mode)
 
     def IsBlankMode(self,mode):
         cc = GetModeVar(self.options,mode,'compileCmd')
@@ -665,7 +702,7 @@ class Builder:
             if errored:
                 self.InfoPrint(f"{ERROR()}Not all files were successfully compiled!")
                 ErrorExit()
-
+                
         # linking
         if GetModeVar(self.options,mode,'linkCmd')!='':
             self.InfoPrint(f'{TextColor(WHITE,1)}Linking executable...{RESET()}')
@@ -674,7 +711,7 @@ class Builder:
             if self.debug:
                 self.InfoPrint(f'{TextColor(BLUE)}{cmd}{RESET()}')
             else:
-                src = self.GetObjectsPath(mode)
+                src = os.path.normpath(self.GetPath(mode,'objectDir'))
                 dest = self.GetOutputPath(mode)
                 self.InfoPrint(f'{TextColor(GREEN)}Linking: {TextColor(BLUE)}{src} {TextColor(WHITE,1)}-> {TextColor(GREEN,1)}{dest}{RESET()}')
             code = self.RunCommand(cmd)
@@ -710,17 +747,14 @@ class Builder:
             subs = [m]
             
         for mode in subs:
+            ext = GetModeVar(self.options,mode,'objectExt')
             if self.NeedsCleaning(mode):
                 self.InfoPrint(f"{TextColor(WHITE,1)}Using mode {MODE()}{ModeStr(mode)}{RESET()}")
                 self.InfoPrint(f"{TextColor(WHITE,1)}Cleaning up...{TextColor(YELLOW)}")
                 if self.DirContainsObjects(mode):
                     path = self.GetPath(mode,'objectDir')
-                    self.InfoPrint(f"{TextColor(YELLOW)}Removing {os.path.join(path,'*.o')}")
-                    ext = GetModeVar(self.options,mode,'objectExt')
-                    files = os.listdir(path)
-                    for file in files:
-                        if GetExtension(file)==ext:
-                            os.remove(os.path.join(path,file))
+                    self.InfoPrint(f"{TextColor(YELLOW)}Removing objects in {path}")
+                    self.RemoveObjects(path,ext)
                 
                 path = self.GetOutputPath(mode)
                 if os.path.exists(path):
@@ -956,7 +990,7 @@ def GetOptionsFromFile(file):
 def main():    
     global noColor
     name = 'builder'
-    builderVersion = '0.1.0'
+    builderVersion = '0.1.1'
     
     os.system('')
 
