@@ -300,16 +300,28 @@ class Builder:
 
         self.rebuildList = list(self.rebuildSet)
         SortByFileTimesIP(self.rebuildList)
+        
+    def CollectObjectsSub(self,path,l,objExt):
+        for entry in os.listdir(path):
+            real = os.path.join(path,entry)
+            if os.path.isdir(real):
+                self.CollectObjectsSub(real,l,objExt)
+            elif os.path.isfile(real):
+                if GetExtension(real)==objExt:
+                    l.append(real)
 
     def GetObjectPaths(self,mode):
         d = self.GetPath(mode,'objDir')
+        ext = GetModeVar(self.options,mode,'objExt')
+        objs = []
+        self.CollectObjectsSub(d,objs,ext)
+        
         s = ''
-        for file in self.compileFiles:
-            p = self.GetObjectFromSource(mode,file)
-            s += p+' '
+        for file in objs:
+            s += file+' '
             
         return s[:-1]
-
+        
     def GetObjectFromSource(self,mode,src):
         d = self.GetPath(mode,'objDir')
         return os.path.join(d,AddExtension(src,GetModeVar(self.options,mode,'objExt')))
@@ -636,12 +648,12 @@ class Builder:
     def GetDepExtractFunc(self,mode):
         self.depExtractFunc = CPPDeps
         
-    def PruneObjectsSub(self,path,ext):
+    def PruneObjectsSub(self,path,ext,srcExts):
         files = os.listdir(path)
         for file in files:
             p = os.path.join(path,file)
             if os.path.isdir(p):
-                self.PruneObjectsSub(p,ext)
+                self.PruneObjectsSub(p,ext,srcExts)
             elif os.path.isfile(p):
                 if GetExtension(file)==ext:
                     prune = False
@@ -650,6 +662,9 @@ class Builder:
                         self.DebugPrint(f"Pruned zero-size object: {p}")
                     else:
                         src = os.path.splitext(p)[0]
+                        # ignore if it wasn't built by this mode
+                        if GetExtension(src) not in srcExts:
+                            continue
                         found = False
                         for srcFile in self.compileFiles:
                             if src.endswith(srcFile):
@@ -668,8 +683,9 @@ class Builder:
         self.pruned = False
         objDir = self.GetPath(mode,'objDir')
         objExt = GetModeVar(self.options,mode,'objExt')
+        srcExts = GetModeVar(self.options,mode,'srcExts')
         
-        self.PruneObjectsSub(objDir,objExt)
+        self.PruneObjectsSub(objDir,objExt,srcExts)
         
         if self.pruned:
             self.Scan(mode)
@@ -1011,7 +1027,7 @@ def GetOptionsFromFile(file):
 def main():    
     global noColor
     name = 'builder'
-    builderVersion = '0.1.3'
+    builderVersion = '0.1.4'
     
     os.system('')
 
