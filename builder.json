@@ -1,0 +1,26 @@
+{
+	"modes": {
+		"install": {
+			"defaultMode":"%platform",
+			"modes": {
+				"windows": {
+					"postCmds":[
+						"echo Add this folder to your path"
+					]
+				},
+				"linux": {
+					"postCmds":[
+						"echo Installing...",
+						[
+							"cp",
+							"./builder.py",
+							"/usr/local/bin/builder"
+						],
+						"echo Installed at /usr/local/bin/builder"
+					]
+				}
+			}
+		}
+	
+	}
+}
