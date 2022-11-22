@@ -773,7 +773,7 @@ class Builder:
                 ErrorExit()
 
         for command in postCmds:
-            self.InfoPrint(f"{TextColor(MAGENTA)}{command}{RESET()}")
+            self.DebugPrint(f"{TextColor(MAGENTA)}{command}{RESET()}")
             code = self.RunCommand(command)
             if code!=0:
                 ErrorExit()
