@@ -412,7 +412,7 @@ class Builder:
         if flag=='%modeFirst':
             return mode[0]
         if flag=='%self':
-            return self.GetBuilderPath()
+            return 'python '+self.GetBuilderPath()
         if flag=='%utime':
             return str(int(time.time()))
         if flag=='%platform':
